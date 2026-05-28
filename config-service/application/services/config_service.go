@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"config-service/config-service/domain/model"
 	"config-service/config-service/infrastructure/configuration"
@@ -77,6 +78,38 @@ func (s *ConfigService) KafkaConfig() model.KafkaConfig {
 	}
 }
 
+func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.RuntimeConfigResponse, error) {
+	svc, err := s.GetServiceByName(serviceName)
+	if err != nil {
+		return model.RuntimeConfigResponse{}, err
+	}
+	if strings.TrimSpace(profile) == "" {
+		profile = "local"
+	}
+
+	common := map[string]string{
+		"ENVIRONMENT":             shared.EnvOrDefault("ENVIRONMENT", "local"),
+		"KAFKA_BOOTSTRAP_SERVERS": shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
+		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "PENDING_CONFIGURATION"),
+		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config"),
+	}
+
+	return model.RuntimeConfigResponse{
+		Service:       svc.Name,
+		Profile:       profile,
+		ConfigVersion: "v1",
+		Common:        common,
+		ServiceConfig: svc,
+		Kafka:         s.KafkaConfig(),
+		Gateway:       s.GatewayConfig(),
+		Metadata: map[string]interface{}{
+			"served_at_utc": time.Now().UTC().Format(time.RFC3339),
+			"language_hint": languageHint(svc.Name),
+		},
+	}, nil
+}
+
 func osOrEmpty(k string) string { return shared.EnvOrDefault(k, "") }
 
 func sortTopics(m map[string][]string) {
@@ -139,5 +172,16 @@ func consumerGroupFor(service string) string {
 		return "PENDING_CONFIGURATION"
 	default:
 		return "PENDING_CONFIGURATION"
+	}
+}
+
+func languageHint(service string) string {
+	switch strings.ToLower(service) {
+	case "iam-service":
+		return "java"
+	case "microservice-analytics-service", "analytics-service", "microservice-energy-monitoring-service", "energy-monitoring-service":
+		return "python"
+	default:
+		return "go"
 	}
 }

@@ -20,6 +20,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/health", h.health)
 	mux.HandleFunc("/api/v1/config/services", h.services)
 	mux.HandleFunc("/api/v1/config/services/", h.serviceByName)
+	mux.HandleFunc("/api/v1/config/runtime/", h.runtimeConfig)
 	mux.HandleFunc("/api/v1/config/kafka", h.kafka)
 	mux.HandleFunc("/api/v1/config/api-gateway", h.gateway)
 }
@@ -72,4 +73,24 @@ func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, h.service.GatewayConfig())
+}
+
+func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/config/runtime/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "use /api/v1/config/runtime/{serviceName}/{profile}")
+		return
+	}
+
+	resp, err := h.service.GetRuntimeConfig(parts[0], parts[1])
+	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, "service not found")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }

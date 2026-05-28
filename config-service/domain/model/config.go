@@ -36,3 +36,14 @@ type HealthResponse struct {
 	Service     string `json:"service"`
 	Environment string `json:"environment"`
 }
+
+type RuntimeConfigResponse struct {
+	Service       string                 `json:"service"`
+	Profile       string                 `json:"profile"`
+	ConfigVersion string                 `json:"config_version"`
+	Common        map[string]string      `json:"common"`
+	ServiceConfig ServiceConfig          `json:"service_config"`
+	Kafka         KafkaConfig            `json:"kafka"`
+	Gateway       GatewayConfig          `json:"gateway"`
+	Metadata      map[string]interface{} `json:"metadata"`
+}
