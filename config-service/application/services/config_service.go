@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"config-service/domain/model"
-	"config-service/infrastructure/configuration"
+	"config-service/config-service/domain/model"
+	"config-service/config-service/infrastructure/configuration"
 	"config-service/shared"
 )
 

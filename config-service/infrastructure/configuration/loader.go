@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"config-service/domain/model"
+	"config-service/config-service/domain/model"
 )
 
 const pending = "PENDING_CONFIGURATION"

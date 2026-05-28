@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"config-service/application/services"
-	httpx "config-service/infrastructure/http"
+	"config-service/config-service/application/services"
+	httpx "config-service/config-service/infrastructure/http"
 )
 
 type Handler struct {

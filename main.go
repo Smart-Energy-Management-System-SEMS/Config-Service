@@ -4,9 +4,9 @@ import (
 	"log"
 	"net/http"
 
-	"config-service/application/services"
-	"config-service/infrastructure/configuration"
-	"config-service/interfaces/rest"
+	"config-service/config-service/application/services"
+	"config-service/config-service/infrastructure/configuration"
+	"config-service/config-service/interfaces/rest"
 	"config-service/shared"
 )
 
