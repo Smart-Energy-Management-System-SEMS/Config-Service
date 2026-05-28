@@ -13,7 +13,7 @@ import (
 
 const pending = "PENDING_CONFIGURATION"
 
-var secretPattern = regexp.MustCompile(`(?i)(password|secret|token|apikey|api[_-]?key|connection\s*string|jwt|stripe|twilio|gmail|oauth|credential|db_url|database_url|mongodb_uri|kafka_username|kafka_password)`) 
+var secretPattern = regexp.MustCompile(`(?i)(password|secret|token|apikey|api[_-]?key|connection\s*string|jwt|stripe|twilio|gmail|oauth|credential|db_url|database_url|mongodb_uri|kafka_username|kafka_password)`)
 
 type Loader struct {
 	sourcePath string

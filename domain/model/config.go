@@ -23,12 +23,12 @@ type GatewayConfig struct {
 }
 
 type KafkaConfig struct {
-	BootstrapServers string            `json:"bootstrap_servers"`
-	SecurityProtocol string            `json:"security_protocol"`
-	SASLMechanism    string            `json:"sasl_mechanism"`
+	BootstrapServers string              `json:"bootstrap_servers"`
+	SecurityProtocol string              `json:"security_protocol"`
+	SASLMechanism    string              `json:"sasl_mechanism"`
 	ProducedTopics   map[string][]string `json:"produced_topics"`
 	ConsumedTopics   map[string][]string `json:"consumed_topics"`
-	ConsumerGroups   map[string]string `json:"consumer_groups"`
+	ConsumerGroups   map[string]string   `json:"consumer_groups"`
 }
 
 type HealthResponse struct {
