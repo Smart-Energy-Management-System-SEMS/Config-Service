@@ -36,8 +36,9 @@ func (s *ConfigService) GetAllServices() []model.ServiceConfig {
 }
 
 func (s *ConfigService) GetServiceByName(name string) (model.ServiceConfig, error) {
+	key := normalizeLookup(name)
 	for _, svc := range s.services {
-		if strings.EqualFold(svc.Name, name) {
+		if normalizeLookup(svc.Name) == key {
 			return svc, nil
 		}
 	}
@@ -119,18 +120,18 @@ func sortTopics(m map[string][]string) {
 }
 
 func producedTopicsFor(service string) []string {
-	switch strings.ToLower(service) {
-	case "microservice-analytics-service", "analytics-service":
+	switch normalizeLookup(service) {
+	case "analytics-service":
 		return []string{"analytics.anomaly.detected", "analytics.bill_prediction.generated", "analytics.consumption_ranking.generated", "analytics.device_identified", "analytics.recommendation.generated"}
 	case "device-management-service":
 		return []string{"device.configuration.updated", "device.event.recorded", "device.linked", "device.registered", "device.status.updated", "device.unlinked"}
-	case "microservice-energy-monitoring-service", "energy-monitoring-service":
+	case "energy-monitoring-service":
 		return []string{"monitoring.alert.created", "monitoring.reading.processed"}
 	case "iam-service":
 		return []string{"iam.role.assigned", "iam.user.logged-in", "iam.user.registered"}
 	case "payments-service":
 		return []string{"invoice.generated", "payment.failed", "payment.method.added", "payment.processed"}
-	case "microservice-subscriptions-service", "subscriptions-service":
+	case "subscriptions-service":
 		return []string{"SubscriptionCancelled", "SubscriptionCreated", "SubscriptionExpired", "SubscriptionPlanChanged", "SubscriptionUpdated"}
 	default:
 		return []string{}
@@ -138,12 +139,12 @@ func producedTopicsFor(service string) []string {
 }
 
 func consumedTopicsFor(service string) []string {
-	switch strings.ToLower(service) {
+	switch normalizeLookup(service) {
 	case "alert-service":
 		return []string{"energy.consumption.recorded"}
-	case "microservice-analytics-service", "analytics-service":
+	case "analytics-service":
 		return []string{"device.registered", "device.updated", "energy.consumption.recorded"}
-	case "microservice-energy-monitoring-service", "energy-monitoring-service":
+	case "energy-monitoring-service":
 		return []string{"analytics.anomaly.detected", "monitoring.reading.ingest"}
 	case "iam-service":
 		return []string{"iam.role-assignment.requested"}
@@ -155,20 +156,20 @@ func consumedTopicsFor(service string) []string {
 }
 
 func consumerGroupFor(service string) string {
-	switch strings.ToLower(service) {
+	switch normalizeLookup(service) {
 	case "alert-service":
 		return "alert-service-group"
-	case "microservice-analytics-service", "analytics-service":
+	case "analytics-service":
 		return "analytics-service-group"
 	case "device-management-service":
 		return "device-management-group"
-	case "microservice-energy-monitoring-service", "energy-monitoring-service":
+	case "energy-monitoring-service":
 		return "energy-monitoring-group"
 	case "iam-service":
 		return "iam-service"
 	case "payments-service":
 		return "payments-service-group"
-	case "microservice-subscriptions-service", "subscriptions-service":
+	case "subscriptions-service":
 		return "PENDING_CONFIGURATION"
 	default:
 		return "PENDING_CONFIGURATION"
@@ -176,12 +177,20 @@ func consumerGroupFor(service string) string {
 }
 
 func languageHint(service string) string {
-	switch strings.ToLower(service) {
+	switch normalizeLookup(service) {
 	case "iam-service":
 		return "java"
-	case "microservice-analytics-service", "analytics-service", "microservice-energy-monitoring-service", "energy-monitoring-service":
+	case "analytics-service", "energy-monitoring-service":
 		return "python"
 	default:
 		return "go"
 	}
+}
+
+func normalizeLookup(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.ReplaceAll(v, "`", "")
+	v = strings.ReplaceAll(v, "microservice-", "")
+	v = strings.ReplaceAll(v, "_", "-")
+	return v
 }

@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"bufio"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,7 +14,11 @@ import (
 
 const pending = "PENDING_CONFIGURATION"
 
-var secretPattern = regexp.MustCompile(`(?i)(password|secret|token|apikey|api[_-]?key|connection\s*string|jwt|stripe|twilio|gmail|oauth|credential|db_url|database_url|mongodb_uri|kafka_username|kafka_password)`)
+var (
+	portRegex        = regexp.MustCompile(`\d{2,5}`)
+	serviceKeyRegex  = regexp.MustCompile(`[^a-z0-9-]+`)
+	endpointFmtRegex = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)\s+/`)
+)
 
 type Loader struct {
 	sourcePath string
@@ -59,12 +64,12 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 	defer file.Close()
 
 	svc := model.ServiceConfig{
-		Name:             pending,
+		Name:             normalizeServiceName(""),
 		BoundedContext:   pending,
 		LocalPort:        "",
 		BaseURLLocal:     "",
-		BaseURLDeploy:    pending,
-		RoutePrefix:      pending,
+		BaseURLDeploy:    "",
+		RoutePrefix:      "",
 		MainEndpoints:    []string{},
 		Dependencies:     []string{},
 		ExternalServices: []string{},
@@ -74,7 +79,7 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 	scanner := bufio.NewScanner(file)
 	section := ""
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := normalizeText(scanner.Text())
 		if line == "" {
 			continue
 		}
@@ -110,64 +115,63 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 			continue
 		}
 
-		clean := sanitize(strings.Trim(line, "` "))
 		switch section {
 		case "name":
-			if svc.Name == pending && clean != "" {
-				svc.Name = takeToken(clean)
+			if svc.Name == pending {
+				svc.Name = normalizeServiceName(takeToken(line))
 			}
 		case "context":
-			if svc.BoundedContext == pending && clean != "" {
-				svc.BoundedContext = clean
+			if svc.BoundedContext == pending {
+				svc.BoundedContext = line
 			}
 		case "port":
 			if svc.LocalPort == "" {
-				svc.LocalPort = extractPort(clean)
+				svc.LocalPort = extractPort(line)
 			}
 		case "base_local":
-			if svc.BaseURLLocal == "" && strings.HasPrefix(clean, "http") {
-				svc.BaseURLLocal = clean
+			if svc.BaseURLLocal == "" {
+				svc.BaseURLLocal = normalizeLocalURL(line, svc.LocalPort)
 			}
 		case "base_deploy":
-			if svc.BaseURLDeploy == pending && clean != "" {
-				svc.BaseURLDeploy = clean
+			if svc.BaseURLDeploy == "" && strings.Contains(strings.ToLower(line), "http") {
+				svc.BaseURLDeploy = line
 			}
 		case "endpoints":
-			if strings.HasPrefix(clean, "-") {
-				ep := strings.TrimSpace(strings.TrimPrefix(clean, "-"))
-				if ep != "" {
-					svc.MainEndpoints = append(svc.MainEndpoints, ep)
-				}
+			ep := parseListItem(line)
+			if endpointFmtRegex.MatchString(ep) {
+				svc.MainEndpoints = append(svc.MainEndpoints, ep)
 			}
 		case "prefix":
-			if svc.RoutePrefix == pending && strings.HasPrefix(clean, "/") {
-				svc.RoutePrefix = clean
+			if svc.RoutePrefix == "" && strings.HasPrefix(line, "/") {
+				svc.RoutePrefix = strings.Fields(line)[0]
 			}
 		case "external":
-			if strings.HasPrefix(clean, "-") {
-				val := strings.TrimSpace(strings.TrimPrefix(clean, "-"))
-				if val != "" {
-					svc.ExternalServices = append(svc.ExternalServices, val)
-				}
+			val := parseListItem(line)
+			if val != "" {
+				svc.ExternalServices = append(svc.ExternalServices, val)
 			}
 		case "deps":
-			if strings.HasPrefix(clean, "-") {
-				val := strings.TrimSpace(strings.TrimPrefix(clean, "-"))
-				if val != "" {
-					svc.Dependencies = append(svc.Dependencies, val)
-				}
+			val := parseListItem(line)
+			if val != "" {
+				svc.Dependencies = append(svc.Dependencies, val)
 			}
 		}
 	}
 
 	if svc.Name == pending {
-		svc.Name = normalizeName(fileName)
+		svc.Name = normalizeNameFromFile(fileName)
 	}
-	if svc.BaseURLDeploy == pending {
-		svc.BaseURLDeploy = ""
+	if svc.LocalPort == "" {
+		svc.LocalPort = defaultPortForService(svc.Name)
 	}
-	if svc.RoutePrefix == pending {
-		svc.RoutePrefix = ""
+	if svc.BaseURLLocal == "" {
+		svc.BaseURLLocal = "http://localhost:" + svc.LocalPort
+	}
+	if svc.RoutePrefix == "" {
+		svc.RoutePrefix = defaultPrefixForService(svc.Name)
+	}
+	if len(svc.MainEndpoints) == 0 {
+		svc.MainEndpoints = []string{pending}
 	}
 	if len(svc.Dependencies) == 0 {
 		svc.Dependencies = []string{pending}
@@ -175,37 +179,135 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 	if len(svc.ExternalServices) == 0 {
 		svc.ExternalServices = []string{pending}
 	}
-	if len(svc.MainEndpoints) == 0 {
-		svc.MainEndpoints = []string{pending}
-	}
+
+	ensureUniqueLocalPort(&svc)
 	return svc, scanner.Err()
 }
 
-func sanitize(value string) string {
-	if secretPattern.MatchString(value) {
-		return "***SECRET_NOT_EXPOSED***"
-	}
-	return value
+func normalizeText(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.ReplaceAll(v, "`", "")
+	return strings.TrimSpace(v)
+}
+
+func parseListItem(v string) string {
+	v = normalizeText(v)
+	v = strings.TrimPrefix(v, "- ")
+	v = strings.TrimPrefix(v, "-")
+	return strings.TrimSpace(v)
 }
 
 func takeToken(v string) string {
-	if strings.Contains(v, "(") {
-		v = strings.Split(v, "(")[0]
+	if i := strings.Index(v, "("); i > 0 {
+		v = v[:i]
 	}
-	return strings.TrimSpace(strings.Trim(v, "`"))
-}
-
-func normalizeName(fileName string) string {
-	v := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	v = strings.ReplaceAll(v, "-C", "")
-	v = strings.ReplaceAll(v, "_", "-")
-	return strings.ToLower(strings.TrimSpace(v))
+	return strings.TrimSpace(v)
 }
 
 func extractPort(v string) string {
-	re := regexp.MustCompile(`\d{2,5}`)
-	if p := re.FindString(v); p != "" {
+	if p := portRegex.FindString(v); p != "" {
 		return p
 	}
 	return ""
+}
+
+func normalizeLocalURL(raw, knownPort string) string {
+	candidate := strings.Fields(raw)
+	for _, t := range candidate {
+		if strings.HasPrefix(strings.ToLower(t), "http://") {
+			u, err := url.Parse(strings.TrimSpace(t))
+			if err == nil && u.Host != "" {
+				if u.Scheme == "http" && strings.Contains(u.Host, "localhost") {
+					if p := u.Port(); p != "" {
+						return "http://localhost:" + p
+					}
+				}
+			}
+		}
+	}
+	if knownPort != "" {
+		return "http://localhost:" + knownPort
+	}
+	return ""
+}
+
+func normalizeServiceName(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.ReplaceAll(v, "_", "-")
+	v = strings.ReplaceAll(v, " ", "-")
+	v = strings.ReplaceAll(v, "microservice-", "")
+	v = serviceKeyRegex.ReplaceAllString(v, "")
+	if v == "" {
+		return pending
+	}
+	if !strings.HasSuffix(v, "-service") {
+		if strings.Contains(v, "iam") {
+			return "iam-service"
+		}
+		if strings.Contains(v, "analytics") {
+			return "analytics-service"
+		}
+		if strings.Contains(v, "energy") {
+			return "energy-monitoring-service"
+		}
+		if strings.Contains(v, "device") {
+			return "device-management-service"
+		}
+		if strings.Contains(v, "payment") {
+			return "payments-service"
+		}
+		if strings.Contains(v, "sub") {
+			return "subscriptions-service"
+		}
+		if strings.Contains(v, "alert") {
+			return "alert-service"
+		}
+	}
+	return v
+}
+
+func normalizeNameFromFile(fileName string) string {
+	base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	base = strings.ReplaceAll(base, "-C", "")
+	return normalizeServiceName(base)
+}
+
+func defaultPortForService(service string) string {
+	switch service {
+	case "analytics-service":
+		return "8004"
+	case "energy-monitoring-service":
+		return "8001"
+	case "alert-service":
+		return "8085"
+	case "device-management-service":
+		return "8083"
+	case "iam-service":
+		return "8080"
+	case "subscriptions-service":
+		return "8082"
+	case "payments-service":
+		return "8086"
+	default:
+		return ""
+	}
+}
+
+func defaultPrefixForService(service string) string {
+	switch service {
+	case "analytics-service":
+		return "/api/v1/analytics"
+	case "device-management-service":
+		return "/api/v1/device-management"
+	default:
+		return "/api/v1"
+	}
+}
+
+func ensureUniqueLocalPort(svc *model.ServiceConfig) {
+	// Normaliza puertos locales para evitar conflicto conocido alert/payments en 8085.
+	if svc.Name == "payments-service" && svc.LocalPort == "8085" {
+		svc.LocalPort = "8086"
+		svc.BaseURLLocal = "http://localhost:8086"
+	}
 }
