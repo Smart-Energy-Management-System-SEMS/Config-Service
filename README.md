@@ -33,7 +33,6 @@ Si un dato no existe, se usa `""` o `"PENDING_CONFIGURATION"`.
 - `GET /api/v1/config/services`
 - `GET /api/v1/config/services/{serviceName}`
 - `GET /api/v1/config/kafka`
-- `POST /api/v1/config/kafka/publish`
 - `GET /api/v1/config/api-gateway`
 
 ## Seguridad
@@ -78,19 +77,14 @@ curl http://localhost:8090/api/v1/config/health
   - `GET /api/v1/config/runtime/{serviceName}/{profile}`
   - Ejemplos listos en `integration-examples/`.
 
-## Publicar evento de prueba en Kafka
 
-Puedes publicar un evento directo desde Config-Service para validar topics:
 
 ```bash
-curl -X POST http://localhost:8090/api/v1/config/kafka/publish \
   -H "Content-Type: application/json" \
   -d "{\"topic\":\"analytics.anomaly.detected\",\"key\":\"test-key\",\"payload\":{\"message\":\"hello kafka\"}}"
 ```
 
-Requiere:
 - `KAFKA_BOOTSTRAP_SERVERS` correcto (ej. `localhost:9092`)
-- `KAFKA_PUBLISH_ENABLED=true`
 
 ## Deploy en Azure Container Apps
 
