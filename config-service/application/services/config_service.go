@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -8,11 +9,14 @@ import (
 
 	"config-service/config-service/domain/model"
 	"config-service/config-service/infrastructure/configuration"
+	"config-service/config-service/infrastructure/kafka"
 	"config-service/shared"
 )
 
 type ConfigService struct {
-	services []model.ServiceConfig
+	services   []model.ServiceConfig
+	publisher  *kafka.Publisher
+	kafkaReady bool
 }
 
 func NewConfigService(loader *configuration.Loader) (*ConfigService, error) {
@@ -20,7 +24,13 @@ func NewConfigService(loader *configuration.Loader) (*ConfigService, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ConfigService{services: services}, nil
+	bootstrap := shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "")
+	enabled := strings.EqualFold(shared.EnvOrDefault("KAFKA_PUBLISH_ENABLED", "true"), "true")
+	return &ConfigService{
+		services:   services,
+		publisher:  kafka.NewPublisher(bootstrap),
+		kafkaReady: enabled,
+	}, nil
 }
 
 func (s *ConfigService) Health() model.HealthResponse {
@@ -109,6 +119,18 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 			"language_hint": languageHint(svc.Name),
 		},
 	}, nil
+}
+
+func (s *ConfigService) PublishTestEvent(ctx context.Context, req model.KafkaPublishRequest) error {
+	if !s.kafkaReady {
+		return errors.New("kafka publish is disabled by KAFKA_PUBLISH_ENABLED")
+	}
+	if req.Payload == nil {
+		req.Payload = map[string]interface{}{}
+	}
+	req.Payload["source_service"] = "config-service"
+	req.Payload["published_at_utc"] = time.Now().UTC().Format(time.RFC3339)
+	return s.publisher.Publish(ctx, req.Topic, req.Key, req.Payload)
 }
 
 func osOrEmpty(k string) string { return shared.EnvOrDefault(k, "") }

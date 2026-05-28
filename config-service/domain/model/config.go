@@ -47,3 +47,9 @@ type RuntimeConfigResponse struct {
 	Gateway       GatewayConfig          `json:"gateway"`
 	Metadata      map[string]interface{} `json:"metadata"`
 }
+
+type KafkaPublishRequest struct {
+	Topic   string                 `json:"topic"`
+	Key     string                 `json:"key"`
+	Payload map[string]interface{} `json:"payload"`
+}
