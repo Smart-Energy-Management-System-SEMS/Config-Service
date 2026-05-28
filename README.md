@@ -73,6 +73,9 @@ curl http://localhost:8090/api/v1/config/health
 - Consumir `GET /api/v1/config/services` para discovery de rutas/servicios.
 - Consumir `GET /api/v1/config/api-gateway` para placeholders de configuracion del gateway.
 - Consumir `GET /api/v1/config/kafka` para metadatos centralizados de mensajeria.
+- Para bootstrap de microservicios por lenguaje (Go/Python/Java), usar:
+  - `GET /api/v1/config/runtime/{serviceName}/{profile}`
+  - Ejemplos listos en `integration-examples/`.
 
 ## Deploy en Azure Container Apps
 
