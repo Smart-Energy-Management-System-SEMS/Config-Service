@@ -79,7 +79,8 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 	scanner := bufio.NewScanner(file)
 	section := ""
 	for scanner.Scan() {
-		line := normalizeText(scanner.Text())
+		rawLine := scanner.Text()
+		line := normalizeText(rawLine)
 		if line == "" {
 			continue
 		}
@@ -137,8 +138,8 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 				svc.BaseURLDeploy = line
 			}
 		case "endpoints":
-			ep := parseListItem(line)
-			if endpointFmtRegex.MatchString(ep) {
+			ep := parseListItem(rawLine)
+			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && endpointFmtRegex.MatchString(ep) {
 				svc.MainEndpoints = append(svc.MainEndpoints, ep)
 			}
 		case "prefix":
@@ -146,13 +147,13 @@ func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
 				svc.RoutePrefix = strings.Fields(line)[0]
 			}
 		case "external":
-			val := parseListItem(line)
-			if val != "" {
+			val := parseListItem(rawLine)
+			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && val != "" {
 				svc.ExternalServices = append(svc.ExternalServices, val)
 			}
 		case "deps":
-			val := parseListItem(line)
-			if val != "" {
+			val := parseListItem(rawLine)
+			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && val != "" {
 				svc.Dependencies = append(svc.Dependencies, val)
 			}
 		}
