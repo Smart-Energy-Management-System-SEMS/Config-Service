@@ -53,6 +53,12 @@ Usar `.env.example` como plantilla:
 - `API_GATEWAY_*`
 - `KAFKA_*`
 
+Valores recomendados en desarrollo local:
+
+- `KAFKA_BOOTSTRAP_SERVERS=localhost:9092`
+- `KAFKA_SECURITY_PROTOCOL=PLAINTEXT`
+- `KAFKA_SASL_MECHANISM=NONE`
+
 ## Ejecucion local
 
 1. Configurar variables de entorno (o un `.env` propio para desarrollo).
@@ -67,6 +73,14 @@ go run main.go
 ```bash
 curl http://localhost:8090/api/v1/config/health
 ```
+
+4. Verificar configuracion Kafka centralizada:
+
+```bash
+curl http://localhost:8090/api/v1/config/kafka
+```
+
+Debe devolver `bootstrap_servers` y `security_protocol` definidos, y `sasl_mechanism: "NONE"` en local.
 
 ## Uso con API Gateway
 

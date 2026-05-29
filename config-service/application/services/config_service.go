@@ -72,7 +72,7 @@ func (s *ConfigService) KafkaConfig() model.KafkaConfig {
 	return model.KafkaConfig{
 		BootstrapServers: shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "PENDING_CONFIGURATION"),
 		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PENDING_CONFIGURATION"),
-		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "PENDING_CONFIGURATION"),
+		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		ProducedTopics:   produced,
 		ConsumedTopics:   consumed,
 		ConsumerGroups:   groups,
@@ -92,7 +92,7 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 		"ENVIRONMENT":             shared.EnvOrDefault("ENVIRONMENT", "local"),
 		"KAFKA_BOOTSTRAP_SERVERS": shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
 		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
-		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "PENDING_CONFIGURATION"),
+		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config"),
 	}
 
@@ -170,7 +170,7 @@ func consumerGroupFor(service string) string {
 	case "payments-service":
 		return "payments-service-group"
 	case "subscriptions-service":
-		return "PENDING_CONFIGURATION"
+		return "subscriptions-service-group"
 	default:
 		return "PENDING_CONFIGURATION"
 	}
