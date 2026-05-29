@@ -255,6 +255,30 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		cfg["mail_from"] = mailFrom
 	}
 
+	if key == "energy-monitoring-service" {
+		energyBrokers := resolveEnergyKafkaBootstrap(profile)
+		kafkaSecurityProtocol := shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+		kafkaSASLMechanism := shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE")
+		kafkaGroupID := consumerGroupFor(key)
+		if kafkaGroupID == "PENDING_CONFIGURATION" {
+			kafkaGroupID = "energy-monitoring-group"
+		}
+
+		cfg["app.host"] = shared.EnvOrDefault("ENERGY_MONITORING_APP_HOST", "0.0.0.0")
+		cfg["app.port"] = svc.LocalPort
+		cfg["app.env"] = normalizeLookup(profile)
+		cfg["api.base_path"] = svc.RoutePrefix
+		cfg["mongodb.database"] = shared.EnvOrDefault("MONGODB_DATABASE", "PENDING_CONFIGURATION")
+		cfg["kafka.bootstrap_servers"] = energyBrokers
+		cfg["kafka.group_id"] = kafkaGroupID
+		cfg["kafka.security_protocol"] = kafkaSecurityProtocol
+		cfg["kafka.sasl_mechanism"] = kafkaSASLMechanism
+		cfg["kafka.topics.reading_ingest"] = "monitoring.reading.ingest"
+		cfg["kafka.topics.anomaly_detected"] = "analytics.anomaly.detected"
+		cfg["kafka.topics.alert_created"] = "monitoring.alert.created"
+		cfg["kafka.topics.reading_processed"] = "monitoring.reading.processed"
+	}
+
 	return cfg
 }
 
@@ -279,5 +303,14 @@ func resolveKafkaBootstrap(profile string) string {
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", "kafka:9092")
 	default:
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"))
+	}
+}
+
+func resolveEnergyKafkaBootstrap(profile string) string {
+	switch normalizeLookup(profile) {
+	case "docker", "container", "compose":
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", "kafka:9092")
+	default:
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", "localhost:9093")
 	}
 }
