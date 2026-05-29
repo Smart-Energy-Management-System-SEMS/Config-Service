@@ -300,6 +300,16 @@ func defaultPrefixForService(service string) string {
 		return "/api/v1/analytics"
 	case "device-management-service":
 		return "/api/v1/device-management"
+	case "alert-service":
+		return "/api/v1/alerts"
+	case "subscriptions-service":
+		return "/api/v1/subscriptions"
+	case "payments-service":
+		return "/api/v1/payments"
+	case "energy-monitoring-service":
+		return "/api/v1/energy"
+	case "iam-service":
+		return "/api/v1/auth"
 	default:
 		return "/api/v1"
 	}
@@ -307,12 +317,20 @@ func defaultPrefixForService(service string) string {
 
 func ensureUniqueLocalPort(svc *model.ServiceConfig) {
 	// Alinea puertos locales esperados por contratos de integracion.
+	if svc.Name == "subscriptions-service" {
+		svc.LocalPort = "8082"
+		svc.BaseURLLocal = "http://localhost:8082"
+	}
 	if svc.Name == "alert-service" {
+		svc.LocalPort = "8085"
+		svc.BaseURLLocal = "http://localhost:8085"
+	}
+	if svc.Name == "payments-service" {
 		svc.LocalPort = "8086"
 		svc.BaseURLLocal = "http://localhost:8086"
 	}
-	if svc.Name == "payments-service" && svc.LocalPort == "8086" {
-		svc.LocalPort = "8085"
-		svc.BaseURLLocal = "http://localhost:8085"
+	if svc.Name == "energy-monitoring-service" {
+		svc.LocalPort = "8001"
+		svc.BaseURLLocal = "http://localhost:8001"
 	}
 }

@@ -225,6 +225,9 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		"service_name":            svc.Name,
 		"serverPort":              svc.LocalPort,
 		"server_port":             svc.LocalPort,
+		"base_url_local":          svc.BaseURLLocal,
+		"route_prefix":            svc.RoutePrefix,
+		"gateway_health_path":     gatewayHealthPathFor(key),
 		"kafkaConsumerGroup":      group,
 		"kafka_consumer_group":    group,
 		"kafkaConsumptionTopic":   consumptionTopic,
@@ -295,6 +298,27 @@ func normalizeLookup(v string) string {
 	v = strings.ReplaceAll(v, "microservice-", "")
 	v = strings.ReplaceAll(v, "_", "-")
 	return v
+}
+
+func gatewayHealthPathFor(service string) string {
+	switch normalizeLookup(service) {
+	case "iam-service":
+		return "/api/v1/iam/health"
+	case "analytics-service":
+		return "/api/v1/analytics/health"
+	case "device-management-service":
+		return "/api/v1/device-management/health"
+	case "alert-service":
+		return "/api/v1/alerts-service/health"
+	case "subscriptions-service":
+		return "/api/v1/subscriptions/health"
+	case "payments-service":
+		return "/api/v1/payments/health"
+	case "energy-monitoring-service":
+		return "/api/v1/energy/health"
+	default:
+		return "/api/v1/health"
+	}
 }
 
 func resolveKafkaBootstrap(profile string) string {
