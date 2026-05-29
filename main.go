@@ -1,20 +1,32 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"net/http"
+
+	"config-service/config-service/application/services"
+	"config-service/config-service/infrastructure/configuration"
+	"config-service/config-service/interfaces/rest"
+	"config-service/shared"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
 func main() {
-	//TIP <p>Press <shortcut actionId="ShowIntentionActions"/> when your caret is at the underlined text
-	// to see how GoLand suggests fixing the warning.</p><p>Alternatively, if available, click the lightbulb to view possible fixes.</p>
-	s := "gopher"
-	fmt.Println("Hello and welcome, %s!", s)
+	port := shared.EnvOrDefault("CONFIG_SERVICE_PORT", "8090")
+	sourcePath := shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config")
 
-	for i := 1; i <= 5; i++ {
-		//TIP <p>To start your debugging session, right-click your code in the editor and select the Debug option.</p> <p>We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-		// for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.</p>
-		fmt.Println("i =", 100/i)
+	loader := configuration.NewLoader(sourcePath)
+	configService, err := services.NewConfigService(loader)
+	if err != nil {
+		log.Fatalf("failed to load config source: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	handler := rest.NewHandler(configService)
+	handler.Register(mux)
+
+	addr := ":" + port
+	log.Printf("config-service listening on %s", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("server stopped: %v", err)
 	}
 }

@@ -1,0 +1,94 @@
+1. Nombre del microservicio:  
+`iam-service` (Spring app: `spring.application.name=iam-service`)
+
+2. Bounded Context al que pertenece:  
+`IAM` (Identity and Access Management)
+
+3. Puerto local usado:  
+`8080` (`SERVER_PORT`, `IAM_PORT`)
+
+4. Base URL local:  
+`http://localhost:8080` (directo)  
+`http://localhost:8081` (vía API Gateway)
+
+5. Base URL esperada para deploy:  
+Variable `IAM_DEPLOY_URL` (usada como `service.public-base-url`)  
+En `.env.example` está como `http://localhost:8080` (placeholder local)
+
+6. Endpoints principales expuestos al API Gateway:  
+- `POST /api/v1/auth/register`  
+- `POST /api/v1/auth/login`  
+- `POST /api/v1/auth/google`  
+- `GET /api/v1/auth/google/url`  
+- `GET /api/v1/auth/google/callback`  
+- `GET /api/v1/users/me`  
+- `GET /api/v1/users` (ADMIN)  
+- `POST /api/v1/users/{userId}/roles` (ADMIN)
+
+7. Prefijo base de rutas:  
+`/api/v1`  
+Subprefijos: `/api/v1/auth`, `/api/v1/users`
+
+8. Variables de entorno necesarias:  
+- DB: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`  
+- JWT: `JWT_SECRET`, `JWT_EXPIRATION_MINUTES`  
+- Kafka: `KAFKA_ENABLED`, `KAFKA_BOOTSTRAP_SERVERS` (o `KAFKA_BROKERS`), `KAFKA_HOST`, `KAFKA_PORT`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`, `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_SSL_CA_CERT`, `KAFKA_CONSUMER_GROUP_ID`  
+- OAuth Google: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_SCOPES`  
+- Servicio/red: `SERVER_PORT`, `IAM_PORT`, `GATEWAY_PORT`, `IAM_DEPLOY_URL`  
+- Opcional derivada: `KAFKA_SASL_JAAS_CONFIG` (si se desea sobreescribir)
+
+9. Variables que son secretas y NO deben exponerse desde el Config Service:  
+- `DB_PASSWORD`  
+- `JWT_SECRET`  
+- `KAFKA_PASSWORD`  
+- `KAFKA_USERNAME` (normalmente sensible)  
+- `KAFKA_SSL_CA_CERT` (tratar como sensible)  
+- `KAFKA_SASL_JAAS_CONFIG` (si se usa)  
+- `GOOGLE_CLIENT_SECRET`  
+- `GOOGLE_CLIENT_ID` (recomendado tratarlo como sensible en backend)
+
+10. Configuración Kafka usada:  
+- bootstrap servers: `KAFKA_BOOTSTRAP_SERVERS` (fallback `KAFKA_BROKERS`)  
+- security protocol: `KAFKA_SECURITY_PROTOCOL` (`PLAINTEXT` local / `SASL_SSL` Aiven)  
+- SASL mechanism: `KAFKA_SASL_MECHANISM` (ej. `SCRAM-SHA-256`)  
+- topics que produce:  
+  - `iam.user.registered`  
+  - `iam.user.logged-in`  
+  - `iam.role.assigned`  
+- topics que consume:  
+  - `iam.role-assignment.requested`  
+- consumer group: `KAFKA_CONSUMER_GROUP_ID` (default `iam-service`)
+
+11. Servicios externos que usa:  
+- PostgreSQL (Supabase en entorno real)  
+- Kafka broker/cluster (Aiven o local)  
+- Google OAuth 2.0 (accounts.google.com)  
+- API Gateway Nginx (interno del stack Docker)
+
+12. Base de datos usada:  
+- motor: PostgreSQL  
+- nombre de base de datos: `postgres` (según URL actual/ejemplo)  
+- variables de conexión: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
+
+13. Dependencias de otros microservicios:  
+- No se observan llamadas HTTP salientes directas a otros microservicios.  
+- Dependencia asíncrona por eventos Kafka: consume `iam.role-assignment.requested` (algún otro servicio puede publicarlo).
+
+14. Configuración que actualmente se repite y debería moverse al Config Service:  
+- Puertos y URLs de servicio (`SERVER_PORT`, `IAM_PORT`, `IAM_DEPLOY_URL`, `GATEWAY_PORT`)  
+- Config común de Kafka (bootstrap, security protocol, sasl mechanism, group id, CA cert)  
+- Nombres de topics (`topics.*`)  
+- Configuración base OAuth (`GOOGLE_REDIRECT_URI`, `GOOGLE_SCOPES`)  
+- Parámetros operativos estándar (health exposure, flags como `KAFKA_ENABLED`)
+
+15. Recomendación final de cómo debería registrarse este microservicio en el Config Service:  
+Registrar `iam-service` con 3 bloques:  
+- `service`: nombre, contexto `IAM`, base-path `/api/v1`, URLs local/deploy, rutas públicas gateway.  
+- `messaging.kafka`: bootstrap, seguridad, group id, topics publish/consume.  
+- `dependencies`: db postgres + oauth google.  
+
+Separar configuración en:  
+- `public-config` (no sensible): puertos, rutas, flags, nombres de topics, scopes.  
+- `secret-config` (vault/secret manager): credenciales DB/Kafka/JWT/OAuth.
+
+Nota crítica: en el `.env` actual hay secretos reales expuestos (DB/OAuth). Conviene rotarlos antes de centralizar configuración.

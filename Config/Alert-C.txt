@@ -1,0 +1,88 @@
+1. Nombre del microservicio:  
+`alert-service` (repositorio: `microservice-alert-service`)
+
+2. Bounded Context al que pertenece:  
+`Alert Management` dentro de SEMS (alertas, umbrales, reglas de inactividad, preferencias y notificaciones).
+
+3. Puerto local usado:  
+`8085` (por `SERVER_PORT`, default `8085`).
+
+4. Base URL local:  
+`http://localhost:8085`
+
+5. Base URL esperada para deploy:  
+No está fija en código; en README se asume una URL pública tipo Render, por ejemplo:  
+`https://<tu-servicio>.onrender.com`
+
+6. Endpoints principales expuestos al API Gateway:  
+- `GET /api/v1/alerts-service/health`  
+- `GET /api/v1/alerts`  
+- `GET /api/v1/alerts/:id`  
+- `GET /api/v1/users/:userId/alerts`  
+- `POST /api/v1/alerts`  
+
+7. Prefijo base de rutas:  
+`/api/v1`
+
+8. Variables de entorno necesarias:  
+- `SERVER_PORT`  
+- `DATABASE_URL` (obligatoria; el servicio falla si no existe)  
+- `KAFKA_BROKERS`  
+- `KAFKA_CONSUMER_GROUP` o `KAFKA_GROUP_ID`  
+- `KAFKA_CONSUMPTION_TOPIC` o `KAFKA_TOPIC_DEVICE_READING_CREATED`  
+- `MAIL_HOST`  
+- `MAIL_PORT`  
+- `MAIL_USERNAME`  
+- `MAIL_PASSWORD`  
+- `MAIL_FROM`  
+- `TWILIO_ACCOUNT_SID`  
+- `TWILIO_API_KEY`  
+- `TWILIO_API_SECRET`  
+- `TWILIO_PHONE_NUMBER`
+
+9. Variables que son secretas y NO deben exponerse desde el Config Service:  
+- `DATABASE_URL` (contiene credenciales)  
+- `TWILIO_ACCOUNT_SID`  
+- `TWILIO_API_KEY`  
+- `TWILIO_API_SECRET`  
+- `MAIL_USERNAME`  
+- `MAIL_PASSWORD`  
+
+10. Configuración Kafka usada:  
+- bootstrap servers: `KAFKA_BROKERS` (local típico: `localhost:29092`; en Docker interno: `kafka:9092`)  
+- security protocol: no configurado explícitamente en la app; en `docker-compose` es `PLAINTEXT`  
+- SASL mechanism: no configurado  
+- topics que produce: no hay productor Kafka implementado actualmente  
+- topics que consume: `KAFKA_CONSUMPTION_TOPIC` (fallback `KAFKA_TOPIC_DEVICE_READING_CREATED`), default `energy.consumption.recorded`  
+- consumer group: `KAFKA_CONSUMER_GROUP` (fallback `KAFKA_GROUP_ID`), default de código `alert-service-group`
+
+11. Servicios externos que usa:  
+- Twilio (SMS)  
+- SMTP Gmail (email)  
+- Kafka broker  
+- PostgreSQL (Neon u otro)
+
+12. Base de datos usada:  
+- motor: PostgreSQL  
+- nombre de base de datos: variable según `DATABASE_URL` (en Docker default `alert_service`)  
+- variables de conexión: `DATABASE_URL` (y en compose: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` para armarla)
+
+13. Dependencias de otros microservicios:  
+- Dependencia asíncrona de eventos de consumo energético vía Kafka topic `energy.consumption.recorded` (probable productor: microservicio de medición/consumo).  
+- No se observan llamadas HTTP directas a otros microservicios en este código.
+
+14. Configuración que actualmente se repite y debería moverse al Config Service:  
+- `SERVER_PORT`  
+- `KAFKA_BROKERS`  
+- `KAFKA_CONSUMER_GROUP` / `KAFKA_GROUP_ID`  
+- `KAFKA_CONSUMPTION_TOPIC` / `KAFKA_TOPIC_DEVICE_READING_CREATED`  
+- `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM`  
+- Naming de topics `KAFKA_TOPIC_*` (incluyendo los no usados hoy)  
+- Convenciones de URL base pública (`TARGET_URL` para keep-alive es operativa, no de negocio)
+
+15. Recomendación final de cómo debería registrarse este microservicio en el Config Service:  
+Registrar en dos bloques:
+- `public-config` (no sensible): nombre, bounded context, puerto, basePath `/api/v1`, lista de endpoints, Kafka brokers/topic/group, mail host/port/from.
+- `secret-config` (vault/secret manager): `DATABASE_URL`, credenciales Twilio y credenciales SMTP.
+
+Además, estandarizar claves Kafka para evitar duplicados (`KAFKA_CONSUMER_GROUP` vs `KAFKA_GROUP_ID`, `KAFKA_CONSUMPTION_TOPIC` vs `KAFKA_TOPIC_DEVICE_READING_CREATED`) y dejar una sola convención oficial por microservicio.
