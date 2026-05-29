@@ -233,6 +233,16 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		"kafka_brokers":           brokers,
 	}
 
+	if key == "payments-service" {
+		const paymentsPort = "8086"
+		cfg["name"] = svc.Name
+		cfg["port"] = paymentsPort
+		cfg["serverPort"] = paymentsPort
+		cfg["server_port"] = paymentsPort
+		cfg["api_base_path"] = "/api/v1"
+		cfg["stripe_currency"] = shared.EnvOrDefault("STRIPE_CURRENCY", "pen")
+	}
+
 	if key == "alert-service" {
 		alertTopic := "alert.created"
 		mailHost := shared.EnvOrDefault("MAIL_HOST", "smtp.gmail.com")
