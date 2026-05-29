@@ -81,7 +81,15 @@ func (h *Handler) configByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := h.service.GetServiceCompatibilityConfig(name)
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
+
+	payload, err := h.service.GetServiceCompatibilityConfig(name, profile)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
 		return
@@ -94,7 +102,14 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig())
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig(profile))
 }
 
 func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {

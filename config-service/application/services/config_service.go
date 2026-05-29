@@ -36,9 +36,10 @@ func (s *ConfigService) GetAllServices() []model.ServiceConfig {
 }
 
 func (s *ConfigService) GetAllServicesMap() map[string]map[string]string {
+	profile := shared.EnvOrDefault("ENVIRONMENT", "local")
 	out := map[string]map[string]string{}
 	for _, svc := range s.services {
-		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc)
+		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc, profile)
 	}
 	return out
 }
@@ -64,7 +65,7 @@ func (s *ConfigService) GatewayConfig() model.GatewayConfig {
 	}
 }
 
-func (s *ConfigService) KafkaConfig() model.KafkaConfig {
+func (s *ConfigService) KafkaConfig(profile string) model.KafkaConfig {
 	produced := map[string][]string{}
 	consumed := map[string][]string{}
 	groups := map[string]string{}
@@ -78,7 +79,7 @@ func (s *ConfigService) KafkaConfig() model.KafkaConfig {
 	sortTopics(consumed)
 
 	return model.KafkaConfig{
-		BootstrapServers: shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"),
+		BootstrapServers: resolveKafkaBootstrap(profile),
 		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PENDING_CONFIGURATION"),
 		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		ProducedTopics:   produced,
@@ -98,7 +99,7 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 
 	common := map[string]string{
 		"ENVIRONMENT":             shared.EnvOrDefault("ENVIRONMENT", "local"),
-		"KAFKA_BOOTSTRAP_SERVERS": shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"),
+		"KAFKA_BOOTSTRAP_SERVERS": resolveKafkaBootstrap(profile),
 		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
 		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config"),
@@ -110,7 +111,7 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 		ConfigVersion: "v1",
 		Common:        common,
 		ServiceConfig: svc,
-		Kafka:         s.KafkaConfig(),
+		Kafka:         s.KafkaConfig(profile),
 		Gateway:       s.GatewayConfig(),
 		Metadata: map[string]interface{}{
 			"served_at_utc": time.Now().UTC().Format(time.RFC3339),
@@ -195,17 +196,17 @@ func languageHint(service string) string {
 	}
 }
 
-func (s *ConfigService) GetServiceCompatibilityConfig(name string) (map[string]string, error) {
+func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map[string]string, error) {
 	svc, err := s.GetServiceByName(name)
 	if err != nil {
 		return nil, err
 	}
-	return s.compatibilityConfigFor(name, svc), nil
+	return s.compatibilityConfigFor(name, svc, profile), nil
 }
 
-func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig) map[string]string {
+func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig, profile string) map[string]string {
 	key := normalizeLookup(name)
-	brokers := shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+	brokers := resolveKafkaBootstrap(profile)
 	group := consumerGroupFor(key)
 	if group == "PENDING_CONFIGURATION" {
 		group = key + "-group"
@@ -254,4 +255,13 @@ func normalizeLookup(v string) string {
 	v = strings.ReplaceAll(v, "microservice-", "")
 	v = strings.ReplaceAll(v, "_", "-")
 	return v
+}
+
+func resolveKafkaBootstrap(profile string) string {
+	switch normalizeLookup(profile) {
+	case "docker", "container", "compose":
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", "kafka:9092")
+	default:
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"))
+	}
 }
