@@ -15,18 +15,11 @@ No está fija en código; en README se asume una URL pública tipo Render, por e
 `https://<tu-servicio>.onrender.com`
 
 6. Endpoints principales expuestos al API Gateway:  
-- `GET /api/v1/health`  
+- `GET /api/v1/alerts-service/health`  
 - `GET /api/v1/alerts`  
 - `GET /api/v1/alerts/:id`  
 - `GET /api/v1/users/:userId/alerts`  
 - `POST /api/v1/alerts`  
-- `PATCH /api/v1/alerts/:id/status`  
-- `POST /api/v1/thresholds`  
-- `GET /api/v1/users/:userId/thresholds`  
-- `POST /api/v1/inactivity-rules`  
-- `GET /api/v1/users/:userId/inactivity-rules`  
-- `POST /api/v1/notification-preferences`  
-- `GET /api/v1/users/:userId/notification-preferences`
 
 7. Prefijo base de rutas:  
 `/api/v1`

@@ -5,10 +5,10 @@
 `Payments / Billing` (pagos, métodos de pago, invoices, webhooks Stripe).
 
 3. Puerto local usado:  
-`8085` (`SERVER_PORT`, default en config).
+`8086` (`SERVER_PORT`, default en config).
 
 4. Base URL local:  
-`http://localhost:8085`
+`http://localhost:8086`
 
 5. Base URL esperada para deploy:  
 No está hardcodeada. Según README/keep-alive:  
@@ -16,18 +16,11 @@ No está hardcodeada. Según README/keep-alive:
 Health: `https://<nombre-servicio>.onrender.com/health`.
 
 6. Endpoints principales expuestos al API Gateway:  
-- `GET /health`  
-- `POST /api/v1/payment-methods`  
-- `GET /api/v1/payment-methods/user/:userId`  
-- `PUT /api/v1/payment-methods/:paymentMethodId/default`  
-- `DELETE /api/v1/payment-methods/:paymentMethodId`  
+- `GET /api/v1/payments/health`
 - `POST /api/v1/payments/process`  
 - `GET /api/v1/payments/:paymentId`  
 - `GET /api/v1/payments/user/:userId`  
-- `GET /api/v1/payments/subscription/:subscriptionId`  
 - `GET /api/v1/invoices/:invoiceId`  
-- `GET /api/v1/invoices/payment/:paymentId`  
-- `POST /api/v1/webhooks/stripe`
 
 7. Prefijo base de rutas:  
 `/api/v1` (`API_BASE_PATH`).

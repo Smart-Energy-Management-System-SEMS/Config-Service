@@ -5,29 +5,22 @@
 `Subscriptions` (gestión de planes y suscripciones; sin pagos directos)
 
 3. Puerto local usado:  
-`SERVER_PORT` (por defecto `8081`; en `.env.example` está `8082`; en deploy Render prioriza `PORT`)
+`SERVER_PORT` (estándar local `8082`; en deploy Render prioriza `PORT`)
 
 4. Base URL local:  
 `http://localhost:{PORT}`  
-Usual según repo: `http://localhost:8081` (o `8082` si así se define)
+Usual según repo: `http://localhost:8082`
 
 5. Base URL esperada para deploy:  
 No está fija en código. Se espera URL del proveedor (ej. Render):  
 `https://<service-name>.onrender.com`
 
 6. Endpoints principales expuestos al API Gateway:  
+- `GET /api/v1/subscriptions/health`
 - `GET /api/v1/subscription-plans`  
 - `GET /api/v1/subscription-plans/:planId`  
-- `POST /api/v1/subscription-plans`  
-- `PUT /api/v1/subscription-plans/:planId`  
-- `PATCH /api/v1/subscription-plans/:planId/deactivate`  
 - `GET /api/v1/subscriptions/:subscriptionId`  
 - `GET /api/v1/subscriptions/users/:userId`  
-- `POST /api/v1/subscriptions`  
-- `PATCH /api/v1/subscriptions/:subscriptionId/cancel`  
-- `PATCH /api/v1/subscriptions/:subscriptionId/change-plan`  
-- `POST /api/v1/webhooks/stripe`  
-- `GET /health` (healthcheck)
 
 7. Prefijo base de rutas:  
 `/api/v1` (más ` /health` fuera de ese prefijo)
@@ -102,7 +95,7 @@ Registrar un bloque `subscriptions-service` con separación clara entre `public-
 - `service.context`: `subscriptions`  
 - `service.basePath`: `/api/v1`  
 - `service.healthPath`: `/health`  
-- `service.port`: `8081` (override por entorno)  
+- `service.port`: `8082` (override por entorno)  
 - `apiGateway.exposedRoutes`: lista de endpoints anteriores  
 - `kafka`: brokers/protocol/mechanism/clientId + catálogo de topics producidos  
 - `database`: motor y parámetros no secretos  

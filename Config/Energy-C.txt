@@ -16,27 +16,10 @@ Recomendado registrar como plantilla en Config Service:
 `https://{host-o-gateway}/energy-monitoring` (o el route name que use su API Gateway)
 
 6. Endpoints principales expuestos al API Gateway:  
-- `GET /api/v1/health`
+- `GET /api/v1/energy/health`
 - `POST /api/v1/energy-readings`
 - `GET /api/v1/energy-readings/user/{user_id}`
-- `GET /api/v1/energy-readings/device/{device_id}`
 - `GET /api/v1/energy-readings/range`
-- `GET /api/v1/energy-readings/meter/{meter_id}/latest`
-- `GET /api/v1/energy-readings/{reading_id}`
-- `POST /api/v1/device-consumptions`
-- `GET /api/v1/device-consumptions/user/{user_id}`
-- `GET /api/v1/device-consumptions/user/{user_id}/top`
-- `GET /api/v1/device-consumptions/{consumption_id}`
-- `POST /api/v1/consumption-alerts`
-- `GET /api/v1/consumption-alerts/user/{user_id}`
-- `GET /api/v1/consumption-alerts/user/{user_id}/unread`
-- `PATCH /api/v1/consumption-alerts/{alert_id}/read`
-- `PATCH /api/v1/consumption-alerts/{alert_id}/resolve`
-- `GET /api/v1/consumption-alerts/{alert_id}`
-- `POST /api/v1/energy-meters`
-- `GET /api/v1/energy-meters/user/{user_id}`
-- `PATCH /api/v1/energy-meters/{meter_id}/deactivate`
-- `GET /api/v1/energy-meters/{meter_id}`
 
 7. Prefijo base de rutas:  
 `/api/v1`
