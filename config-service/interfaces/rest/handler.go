@@ -39,9 +39,16 @@ func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"services":     h.service.GetAllServices(),
-		"services_map": h.service.GetAllServicesMap(),
+		"services_map": h.service.GetAllServicesMap(profile),
 	})
 }
 

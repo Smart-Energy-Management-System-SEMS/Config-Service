@@ -35,8 +35,10 @@ func (s *ConfigService) GetAllServices() []model.ServiceConfig {
 	return s.services
 }
 
-func (s *ConfigService) GetAllServicesMap() map[string]map[string]string {
-	profile := shared.EnvOrDefault("ENVIRONMENT", "local")
+func (s *ConfigService) GetAllServicesMap(profile string) map[string]map[string]string {
+	if strings.TrimSpace(profile) == "" {
+		profile = "local"
+	}
 	out := map[string]map[string]string{}
 	for _, svc := range s.services {
 		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc, profile)
