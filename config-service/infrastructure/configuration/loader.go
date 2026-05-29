@@ -306,9 +306,13 @@ func defaultPrefixForService(service string) string {
 }
 
 func ensureUniqueLocalPort(svc *model.ServiceConfig) {
-	// Normaliza puertos locales para evitar conflicto conocido alert/payments en 8085.
-	if svc.Name == "payments-service" && svc.LocalPort == "8085" {
+	// Alinea puertos locales esperados por contratos de integracion.
+	if svc.Name == "alert-service" {
 		svc.LocalPort = "8086"
 		svc.BaseURLLocal = "http://localhost:8086"
+	}
+	if svc.Name == "payments-service" && svc.LocalPort == "8086" {
+		svc.LocalPort = "8085"
+		svc.BaseURLLocal = "http://localhost:8085"
 	}
 }

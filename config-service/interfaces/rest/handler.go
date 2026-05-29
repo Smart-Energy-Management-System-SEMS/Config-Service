@@ -20,6 +20,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/health", h.health)
 	mux.HandleFunc("/api/v1/config/services", h.services)
 	mux.HandleFunc("/api/v1/config/services/", h.serviceByName)
+	mux.HandleFunc("/api/v1/config/", h.configByName)
 	mux.HandleFunc("/api/v1/config/runtime/", h.runtimeConfig)
 	mux.HandleFunc("/api/v1/config/kafka", h.kafka)
 	mux.HandleFunc("/api/v1/config/api-gateway", h.gateway)
@@ -38,7 +39,10 @@ func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"services": h.service.GetAllServices()})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"services":     h.service.GetAllServices(),
+		"services_map": h.service.GetAllServicesMap(),
+	})
 }
 
 func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +61,32 @@ func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, service)
+}
+
+func (h *Handler) configByName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/config/"))
+	if name == "" || strings.Contains(name, "/") {
+		httpx.WriteError(w, http.StatusNotFound, "route not found")
+		return
+	}
+
+	switch name {
+	case "health", "services", "kafka", "api-gateway", "runtime":
+		httpx.WriteError(w, http.StatusNotFound, "route not found")
+		return
+	}
+
+	payload, err := h.service.GetServiceCompatibilityConfig(name)
+	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, "service not found")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {

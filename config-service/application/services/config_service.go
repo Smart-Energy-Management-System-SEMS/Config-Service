@@ -35,6 +35,14 @@ func (s *ConfigService) GetAllServices() []model.ServiceConfig {
 	return s.services
 }
 
+func (s *ConfigService) GetAllServicesMap() map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, svc := range s.services {
+		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc)
+	}
+	return out
+}
+
 func (s *ConfigService) GetServiceByName(name string) (model.ServiceConfig, error) {
 	key := normalizeLookup(name)
 	for _, svc := range s.services {
@@ -70,7 +78,7 @@ func (s *ConfigService) KafkaConfig() model.KafkaConfig {
 	sortTopics(consumed)
 
 	return model.KafkaConfig{
-		BootstrapServers: shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "PENDING_CONFIGURATION"),
+		BootstrapServers: shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"),
 		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PENDING_CONFIGURATION"),
 		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		ProducedTopics:   produced,
@@ -90,7 +98,7 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 
 	common := map[string]string{
 		"ENVIRONMENT":             shared.EnvOrDefault("ENVIRONMENT", "local"),
-		"KAFKA_BOOTSTRAP_SERVERS": shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+		"KAFKA_BOOTSTRAP_SERVERS": shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"),
 		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
 		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
 		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config"),
@@ -185,6 +193,59 @@ func languageHint(service string) string {
 	default:
 		return "go"
 	}
+}
+
+func (s *ConfigService) GetServiceCompatibilityConfig(name string) (map[string]string, error) {
+	svc, err := s.GetServiceByName(name)
+	if err != nil {
+		return nil, err
+	}
+	return s.compatibilityConfigFor(name, svc), nil
+}
+
+func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig) map[string]string {
+	key := normalizeLookup(name)
+	brokers := shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+	group := consumerGroupFor(key)
+	if group == "PENDING_CONFIGURATION" {
+		group = key + "-group"
+	}
+	consumed := consumedTopicsFor(key)
+	consumptionTopic := firstOrDefault(consumed, "PENDING_CONFIGURATION")
+
+	cfg := map[string]string{
+		"serviceName":             svc.Name,
+		"service_name":            svc.Name,
+		"serverPort":              svc.LocalPort,
+		"server_port":             svc.LocalPort,
+		"kafkaConsumerGroup":      group,
+		"kafka_consumer_group":    group,
+		"kafkaConsumptionTopic":   consumptionTopic,
+		"kafka_consumption_topic": consumptionTopic,
+		"kafkaBrokers":            brokers,
+		"kafka_brokers":           brokers,
+	}
+
+	if key == "alert-service" {
+		alertTopic := "alert.created"
+		mailHost := shared.EnvOrDefault("MAIL_HOST", "smtp.gmail.com")
+		mailFrom := shared.EnvOrDefault("MAIL_FROM", "PENDING_CONFIGURATION")
+		cfg["kafkaAlertCreatedTopic"] = alertTopic
+		cfg["kafka_alert_created_topic"] = alertTopic
+		cfg["mailHost"] = mailHost
+		cfg["mail_host"] = mailHost
+		cfg["mailFrom"] = mailFrom
+		cfg["mail_from"] = mailFrom
+	}
+
+	return cfg
+}
+
+func firstOrDefault(values []string, fallback string) string {
+	if len(values) == 0 {
+		return fallback
+	}
+	return values[0]
 }
 
 func normalizeLookup(v string) string {
