@@ -209,10 +209,6 @@ func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map
 func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig, profile string) map[string]string {
 	key := normalizeLookup(name)
 	brokers := resolveKafkaBootstrap(profile)
-	if key == "alert-service" && normalizeLookup(profile) != "docker" && normalizeLookup(profile) != "container" && normalizeLookup(profile) != "compose" {
-		// Hard guard for local developer runs (GoLand/go run on host).
-		brokers = "localhost:29092"
-	}
 	group := consumerGroupFor(key)
 	if group == "PENDING_CONFIGURATION" {
 		group = key + "-group"
@@ -324,17 +320,17 @@ func gatewayHealthPathFor(service string) string {
 func resolveKafkaBootstrap(profile string) string {
 	switch normalizeLookup(profile) {
 	case "docker", "container", "compose":
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", "kafka:9092")
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
 	default:
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"))
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
 	}
 }
 
 func resolveEnergyKafkaBootstrap(profile string) string {
 	switch normalizeLookup(profile) {
 	case "docker", "container", "compose":
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", "kafka:9092")
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
 	default:
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", "localhost:9093")
+		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
 	}
 }

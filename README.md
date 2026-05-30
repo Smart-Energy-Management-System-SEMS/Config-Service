@@ -1,119 +1,99 @@
 # Config Service (SEMS)
 
-Microservicio tecnico de configuracion centralizada para SEMS. Expone configuracion publica para API Gateway y microservicios, sin exponer secretos.
+Microservicio de configuracion centralizada para SEMS. Expone configuracion publica para API Gateway y microservicios sin exponer secretos.
 
-## Arquitectura
+## Endpoints principales
 
-Arquitectura modular ligera estilo Clean Architecture:
+- GET `/api/v1/health`
+- GET `/api/v1/config/health`
+- GET `/api/v1/config/services`
+- GET `/api/v1/config/services/{serviceName}`
+- GET `/api/v1/config/kafka`
+- GET `/api/v1/config/api-gateway`
+- GET `/api/v1/config/runtime/{serviceName}/{profile}`
 
-- `application/services`: casos de uso del servicio de configuracion.
-- `domain/model`: modelos de dominio de configuracion.
-- `infrastructure/configuration`: carga y parseo de archivos en `Config/`.
-- `infrastructure/http`: utilidades HTTP de respuesta.
-- `interfaces/rest`: handlers y rutas REST.
-- `shared`: utilidades compartidas.
+## Puerto y runtime
 
-## Fuente de configuracion
+El servicio lee el puerto en este orden:
+1. `PORT` (recomendado para Azure Container Apps)
+2. `CONFIG_SERVICE_PORT`
+3. fallback `8090`
 
-El servicio usa `Config/*.txt` como fuente inicial:
+## Variables requeridas
 
-- `Alert-C.txt`
-- `Analytics-C.txt`
-- `Device-C.txt`
-- `Energy-C.txt`
-- `IAM-C.txt`
-- `Payments-C.txt`
-- `Subs-C.txt`
+Minimas para contenedor/local:
+- `PORT` (ejemplo: `8080`)
+- `CONFIG_SOURCE_PATH` (ejemplo: `Config`)
+- `ENVIRONMENT` (ejemplo: `local`, `staging`, `prod`)
 
-Si un dato no existe, se usa `""` o `"PENDING_CONFIGURATION"`.
+Variables de integracion/config centralizada:
+- `CONFIG_SERVICE_URL`
+- `KAFKA_BROKERS`
+- `KAFKA_SECURITY_PROTOCOL`
+- `KAFKA_SASL_MECHANISM`
+- `KAFKA_USERNAME`
+- `KAFKA_PASSWORD`
+- `DATABASE_URL`
+- `GIN_MODE`
 
-## Endpoints
-
-- `GET /api/v1/config/health`
-- `GET /api/v1/config/services`
-- `GET /api/v1/config/services/{serviceName}`
-- `GET /api/v1/config/kafka`
-- `GET /api/v1/config/api-gateway`
-
-## Seguridad
-
-Este servicio NO expone secretos. Cualquier valor sensible detectado se reemplaza por:
-
-- `***SECRET_NOT_EXPOSED***`
-
-No guardar claves reales en codigo ni en `.env.example`.
-
-## Variables de entorno
-
-Usar `.env.example` como plantilla:
-
-- `CONFIG_SERVICE_PORT`
-- `CONFIG_SOURCE_PATH`
-- `ENVIRONMENT`
-- `API_GATEWAY_*`
-- `KAFKA_*`
-
-Valores recomendados en desarrollo local:
-
+Compatibilidad local Kafka:
+- `KAFKA_BROKERS=localhost:9092`
 - `KAFKA_BOOTSTRAP_SERVERS=localhost:9092`
-- `KAFKA_SECURITY_PROTOCOL=PLAINTEXT`
-- `KAFKA_SASL_MECHANISM=NONE`
+- `KAFKA_BOOTSTRAP_SERVERS_LOCAL=localhost:9092`
 
-## Ejecucion local
-
-1. Configurar variables de entorno (o un `.env` propio para desarrollo).
-2. Ejecutar:
+## Ejecutar local (sin Docker)
 
 ```bash
 go run main.go
 ```
 
-3. Probar health:
+Health check local:
 
 ```bash
+curl http://localhost:8090/api/v1/health
 curl http://localhost:8090/api/v1/config/health
 ```
 
-4. Verificar configuracion Kafka centralizada:
+## Docker
+
+### Build
 
 ```bash
-curl http://localhost:8090/api/v1/config/kafka
+docker build -t sems-config-service:latest .
 ```
 
-Debe devolver `bootstrap_servers` y `security_protocol` definidos, y `sasl_mechanism: "NONE"` en local.
-
-## Uso con API Gateway
-
-- Consumir `GET /api/v1/config/services` para discovery de rutas/servicios.
-- Consumir `GET /api/v1/config/api-gateway` para placeholders de configuracion del gateway.
-- Consumir `GET /api/v1/config/kafka` para metadatos centralizados de mensajeria.
-- Para bootstrap de microservicios por lenguaje (Go/Python/Java), usar:
-  - `GET /api/v1/config/runtime/{serviceName}/{profile}`
-  - Ejemplos listos en `integration-examples/`.
-
-
+### Run (ejemplo local)
 
 ```bash
-  -H "Content-Type: application/json" \
-  -d "{\"topic\":\"analytics.anomaly.detected\",\"key\":\"test-key\",\"payload\":{\"message\":\"hello kafka\"}}"
+docker run --rm -p 8080:8080 \
+  -e PORT=8080 \
+  -e CONFIG_SOURCE_PATH=Config \
+  -e ENVIRONMENT=local \
+  -e KAFKA_BROKERS=host.docker.internal:9092 \
+  -e KAFKA_BOOTSTRAP_SERVERS_LOCAL=host.docker.internal:9092 \
+  -e KAFKA_SECURITY_PROTOCOL=PLAINTEXT \
+  -e KAFKA_SASL_MECHANISM=NONE \
+  sems-config-service:latest
 ```
 
-- `KAFKA_BOOTSTRAP_SERVERS` correcto (ej. `localhost:9092`)
+## Azure Container Apps (ejemplo)
 
-## Deploy en Azure Container Apps
+Definir en la Container App:
+- `PORT=8080`
+- `CONFIG_SOURCE_PATH=Config`
+- `ENVIRONMENT=prod`
+- `CONFIG_SERVICE_URL` (si aplica para clientes)
+- `KAFKA_BROKERS=<broker-azure:9092>`
+- `KAFKA_SECURITY_PROTOCOL=SASL_SSL` (segun tu cluster)
+- `KAFKA_SASL_MECHANISM=SCRAM-SHA-256` (segun tu cluster)
+- `KAFKA_USERNAME=<secret>`
+- `KAFKA_PASSWORD=<secret>`
+- `DATABASE_URL=<secret>`
+- `GIN_MODE=release`
 
-1. Construir imagen Docker del servicio.
-2. Publicar imagen en Azure Container Registry (ACR).
-3. Crear Container App con variables:
-   - `CONFIG_SERVICE_PORT`
-   - `CONFIG_SOURCE_PATH`
-   - `ENVIRONMENT`
-   - `API_GATEWAY_*`
-   - `KAFKA_*`
-4. Configurar probes apuntando a:
-   - `/api/v1/config/health`
-5. Gestionar secretos reales con Azure Key Vault o secretos de Container Apps, no en codigo.
+Configurar health probe en:
+- `/api/v1/health` (recomendado)
 
-## Advertencia
+## Seguridad
 
-No exponer `DATABASE_URL`, tokens, passwords, JWT secrets, Stripe/Twilio/Gmail/OAuth keys, ni credenciales Kafka desde este servicio.
+No exponer ni versionar secretos reales (`DATABASE_URL`, passwords, tokens, credenciales Kafka). Usar secretos de Azure Container Apps y/o Azure Key Vault.

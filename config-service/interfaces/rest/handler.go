@@ -17,6 +17,7 @@ func NewHandler(service *services.ConfigService) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v1/health", h.health)
 	mux.HandleFunc("/api/v1/config/health", h.health)
 	mux.HandleFunc("/api/v1/config/services", h.services)
 	mux.HandleFunc("/api/v1/config/services/", h.serviceByName)

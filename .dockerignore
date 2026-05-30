@@ -1,0 +1,10 @@
+.git
+.gitignore
+.idea
+*.iml
+*.log
+.env
+.env.*
+.vscode
+integration-examples/
+README.md

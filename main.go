@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	port := shared.EnvOrDefault("CONFIG_SERVICE_PORT", "8090")
+	port := shared.EnvOrDefault("PORT", shared.EnvOrDefault("CONFIG_SERVICE_PORT", "8090"))
 	sourcePath := shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config")
 
 	loader := configuration.NewLoader(sourcePath)
