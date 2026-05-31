@@ -82,11 +82,36 @@ func (s *ConfigService) KafkaConfig(profile string) model.KafkaConfig {
 
 	return model.KafkaConfig{
 		BootstrapServers: resolveKafkaBootstrap(profile),
-		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PENDING_CONFIGURATION"),
-		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
+		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
+		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", ""),
 		ProducedTopics:   produced,
 		ConsumedTopics:   consumed,
 		ConsumerGroups:   groups,
+	}
+}
+
+func (s *ConfigService) ServiceEndpoints(profile string) map[string]string {
+	profile = normalizeProfile(profile)
+	azure := profile == "azure"
+
+	deviceLocal := serviceLocalURL(s.services, "device-management-service", "http://localhost:8083")
+	alertLocal := serviceLocalURL(s.services, "alert-service", "http://localhost:8086")
+	analyticsLocal := serviceLocalURL(s.services, "analytics-service", "http://localhost:8087")
+	energyLocal := serviceLocalURL(s.services, "energy-monitoring-service", "http://localhost:8088")
+	iamLocal := serviceLocalURL(s.services, "iam-service", "http://localhost:8082")
+	subscriptionsLocal := serviceLocalURL(s.services, "subscriptions-service", "http://localhost:8084")
+	paymentsLocal := serviceLocalURL(s.services, "payments-service", "http://localhost:8085")
+
+	return map[string]string{
+		"apiGatewayUrl":             resolveServiceURL("API_GATEWAY_URL", "API_GATEWAY_URL_AZURE", "http://localhost:8081", azure),
+		"iamServiceUrl":             resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", iamLocal, azure),
+		"deviceManagementServiceUrl": resolveServiceURL("DEVICE_MANAGEMENT_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", deviceLocal, azure),
+		"subscriptionsServiceUrl":   resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", subscriptionsLocal, azure),
+		"paymentsServiceUrl":        resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", paymentsLocal, azure),
+		"alertServiceUrl":           resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", alertLocal, azure),
+		"analyticsServiceUrl":       resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", analyticsLocal, azure),
+		"energyMonitoringServiceUrl": resolveServiceURL("ENERGY_MONITORING_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", energyLocal, azure),
+		"kafkaBrokers":              resolveKafkaBootstrap(profile),
 	}
 }
 
@@ -318,19 +343,50 @@ func gatewayHealthPathFor(service string) string {
 }
 
 func resolveKafkaBootstrap(profile string) string {
-	switch normalizeLookup(profile) {
+	switch normalizeProfile(profile) {
 	case "docker", "container", "compose":
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
+	case "azure", "prod", "production":
+		return shared.EnvOrDefault("KAFKA_BROKERS_AZURE", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092"))
 	default:
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
 	}
 }
 
 func resolveEnergyKafkaBootstrap(profile string) string {
-	switch normalizeLookup(profile) {
+	switch normalizeProfile(profile) {
 	case "docker", "container", "compose":
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
+	case "azure", "prod", "production":
+		return shared.EnvOrDefault("KAFKA_BROKERS_AZURE", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092"))
 	default:
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
 	}
+}
+
+func normalizeProfile(profile string) string {
+	p := normalizeLookup(profile)
+	if p == "" {
+		p = normalizeLookup(shared.EnvOrDefault("ENVIRONMENT", "local"))
+	}
+	if p == "" {
+		p = "local"
+	}
+	return p
+}
+
+func resolveServiceURL(localKey, azureKey, fallback string, azure bool) string {
+	if azure {
+		return shared.EnvOrDefault(azureKey, shared.EnvOrDefault(localKey, fallback))
+	}
+	return shared.EnvOrDefault(localKey, fallback)
+}
+
+func serviceLocalURL(services []model.ServiceConfig, name, fallback string) string {
+	for _, svc := range services {
+		if normalizeLookup(svc.Name) == normalizeLookup(name) && strings.TrimSpace(svc.BaseURLLocal) != "" {
+			return svc.BaseURLLocal
+		}
+	}
+	return fallback
 }
