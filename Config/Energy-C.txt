@@ -1,30 +1,44 @@
-1. Nombre del microservicio:  
-`Microservice-Energy-Monitoring-Service`
+1. Nombre del microservicio:
+`energy-monitoring-service`
 
-2. Bounded Context al que pertenece:  
-`Monitoring` (Energy Monitoring dentro de SEMS)
+2. Bounded Context al que pertenece:
+`Monitoring` (Energy Monitoring)
 
-3. Puerto local usado:  
-`8001` (`APP_PORT=8001`)
+3. Puerto local usado:
+`8001` (`APP_PORT=8001`; fallback `8080`)
 
-4. Base URL local:  
+4. Base URL local:
 `http://localhost:8001`
 
-5. Base URL esperada para deploy:  
-No está definida explícitamente en el repo.  
-Recomendado registrar como plantilla en Config Service:  
-`https://{host-o-gateway}/energy-monitoring` (o el route name que use su API Gateway)
+5. Base URL esperada para deploy:
+`https://<energy-monitoring-service-host>`
 
-6. Endpoints principales expuestos al API Gateway:  
-- `GET /api/v1/energy/health`
+6. Endpoints principales expuestos al API Gateway:
 - `POST /api/v1/energy-readings`
 - `GET /api/v1/energy-readings/user/{user_id}`
+- `GET /api/v1/energy-readings/device/{device_id}`
 - `GET /api/v1/energy-readings/range`
+- `GET /api/v1/energy-readings/meter/{meter_id}/latest`
+- `GET /api/v1/energy-readings/{reading_id}`
+- `POST /api/v1/device-consumptions`
+- `GET /api/v1/device-consumptions/user/{user_id}`
+- `GET /api/v1/device-consumptions/user/{user_id}/top`
+- `GET /api/v1/device-consumptions/{consumption_id}`
+- `POST /api/v1/consumption-alerts`
+- `GET /api/v1/consumption-alerts/user/{user_id}`
+- `GET /api/v1/consumption-alerts/user/{user_id}/unread`
+- `PATCH /api/v1/consumption-alerts/{alert_id}/read`
+- `PATCH /api/v1/consumption-alerts/{alert_id}/resolve`
+- `GET /api/v1/consumption-alerts/{alert_id}`
+- `POST /api/v1/energy-meters`
+- `GET /api/v1/energy-meters/user/{user_id}`
+- `PATCH /api/v1/energy-meters/{meter_id}/deactivate`
+- `GET /api/v1/energy-meters/{meter_id}`
 
-7. Prefijo base de rutas:  
+7. Prefijo base de rutas:
 `/api/v1`
 
-8. Variables de entorno necesarias:  
+8. Variables de entorno necesarias:
 - `MONGODB_URL`
 - `MONGODB_DATABASE`
 - `KAFKA_BOOTSTRAP_SERVERS`
@@ -37,64 +51,27 @@ Recomendado registrar como plantilla en Config Service:
 - `APP_PORT`
 - `APP_ENV`
 
-9. Variables que son secretas y NO deben exponerse desde el Config Service:  
-- `MONGODB_URL` (contiene credenciales/host sensible)
+9. Variables que son secretas y NO deben exponerse desde el Config Service:
+- `MONGODB_URL`
 
-10. Configuración Kafka usada:  
-- bootstrap servers: `KAFKA_BOOTSTRAP_SERVERS` (local default `localhost:9092`; en docker interno usan `kafka:9092`)
-- security protocol: no configurado en código (implícito `PLAINTEXT`)
-- SASL mechanism: no configurado
+10. Configuracion Kafka usada:
+- bootstrap servers: `KAFKA_BOOTSTRAP_SERVERS`
 - topics que produce:
-  - `KAFKA_TOPIC_ALERT_CREATED` (`monitoring.alert.created`)
-  - `KAFKA_TOPIC_READING_PROCESSED` (`monitoring.reading.processed`)
+  - `monitoring.alert.created`
+  - `monitoring.reading.processed`
 - topics que consume:
-  - `KAFKA_TOPIC_READING_INGEST` (`monitoring.reading.ingest`)
-  - `KAFKA_TOPIC_ANOMALY_DETECTED` (`analytics.anomaly.detected`)
-- consumer group:
-  - `KAFKA_GROUP_ID` (`energy-monitoring-group`)
+  - `monitoring.reading.ingest`
+  - `analytics.anomaly.detected`
+- consumer group: `energy-monitoring-group`
 
-11. Servicios externos que usa:  
-- Apache Kafka broker
-- MongoDB (Atlas o local)
-- Zookeeper (solo en docker-compose local para Kafka)
+11. Servicios externos que usa:
+- Kafka broker
+- MongoDB
 
-12. Base de datos usada:  
-- motor: sí (`motor.motor_asyncio.AsyncIOMotorClient`)
-- nombre de base de datos: `MONGODB_DATABASE` (default `energy_monitoring_db`)
-- variables de conexión:
-  - `MONGODB_URL`
-  - `MONGODB_DATABASE`
+12. Base de datos usada:
+- motor: MongoDB
+- variables de conexion: `MONGODB_URL`, `MONGODB_DATABASE`
 
-13. Dependencias de otros microservicios:  
-- Dependencia asíncrona vía eventos de Analytics Service:
-  - consume `analytics.anomaly.detected`
-- Dependencia asíncrona vía eventos de IoT/Gateway:
-  - consume `monitoring.reading.ingest`
-- No se observan llamadas HTTP directas a otros microservicios en este repo.
-
-14. Configuración que actualmente se repite y debería moverse al Config Service:  
-- `APP_HOST`, `APP_PORT`, `APP_ENV`
-- Todo el bloque Kafka (`bootstrap`, `group`, topic names)
-- `MONGODB_DATABASE`
-- Convenciones de routing/base path (`/api/v1`)
-- Metadatos de servicio (nombre, puerto, URL interna/externa)
-
-15. Recomendación final de cómo debería registrarse este microservicio en el Config Service:  
-Registrar un bloque `energy-monitoring-service` con:
-- `serviceName`, `boundedContext`, `version`
-- `localPort=8001`, `basePath=/api/v1`
-- `internalUrl` (ej. `http://energy-monitoring-service:8001`)
-- `publicRoute` en API Gateway (ej. `/energy-monitoring/**`)
-- `kafka`:
-  - `bootstrapServers`
-  - `groupId`
-  - `topics.produce[]`
-  - `topics.consume[]`
-  - `securityProtocol` (default `PLAINTEXT`, parametrizable)
-- `mongodb`:
-  - `databaseName`
-  - `connectionUri` referenciada como secreto (no en config público)
-
-Separar en dos capas:
-- Config pública/versionable: puertos, rutas, nombres de tópicos, DB name.
-- Secretos: `MONGODB_URL` (y futuros secretos Kafka si activan SASL/SSL).
+13. Dependencias de otros microservicios:
+- Dependencia asincrona por eventos de Analytics Service.
+- No hay llamadas HTTP directas confirmadas.

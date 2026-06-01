@@ -95,23 +95,23 @@ func (s *ConfigService) ServiceEndpoints(profile string) map[string]string {
 	azure := profile == "azure"
 
 	deviceLocal := serviceLocalURL(s.services, "device-management-service", "http://localhost:8083")
-	alertLocal := serviceLocalURL(s.services, "alert-service", "http://localhost:8086")
-	analyticsLocal := serviceLocalURL(s.services, "analytics-service", "http://localhost:8087")
-	energyLocal := serviceLocalURL(s.services, "energy-monitoring-service", "http://localhost:8088")
+	alertLocal := serviceLocalURL(s.services, "alert-service", "http://localhost:8085")
+	analyticsLocal := serviceLocalURL(s.services, "analytics-service", "http://localhost:8004")
+	energyLocal := serviceLocalURL(s.services, "energy-monitoring-service", "http://localhost:8001")
 	iamLocal := serviceLocalURL(s.services, "iam-service", "http://localhost:8082")
-	subscriptionsLocal := serviceLocalURL(s.services, "subscriptions-service", "http://localhost:8084")
-	paymentsLocal := serviceLocalURL(s.services, "payments-service", "http://localhost:8085")
+	subscriptionsLocal := serviceLocalURL(s.services, "subscriptions-service", "http://localhost:18083")
+	paymentsLocal := serviceLocalURL(s.services, "payments-service", "http://localhost:8086")
 
 	return map[string]string{
-		"apiGatewayUrl":             resolveServiceURL("API_GATEWAY_URL", "API_GATEWAY_URL_AZURE", "http://localhost:8081", azure),
-		"iamServiceUrl":             resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", iamLocal, azure),
+		"apiGatewayUrl":              resolveServiceURL("API_GATEWAY_URL", "API_GATEWAY_URL_AZURE", "http://localhost:8081", azure),
+		"iamServiceUrl":              resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", iamLocal, azure),
 		"deviceManagementServiceUrl": resolveServiceURL("DEVICE_MANAGEMENT_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", deviceLocal, azure),
-		"subscriptionsServiceUrl":   resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", subscriptionsLocal, azure),
-		"paymentsServiceUrl":        resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", paymentsLocal, azure),
-		"alertServiceUrl":           resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", alertLocal, azure),
-		"analyticsServiceUrl":       resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", analyticsLocal, azure),
+		"subscriptionsServiceUrl":    resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", subscriptionsLocal, azure),
+		"paymentsServiceUrl":         resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", paymentsLocal, azure),
+		"alertServiceUrl":            resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", alertLocal, azure),
+		"analyticsServiceUrl":        resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", analyticsLocal, azure),
 		"energyMonitoringServiceUrl": resolveServiceURL("ENERGY_MONITORING_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", energyLocal, azure),
-		"kafkaBrokers":              resolveKafkaBootstrap(profile),
+		"kafkaBrokers":               resolveKafkaBootstrap(profile),
 	}
 }
 
@@ -248,6 +248,10 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		"server_port":             svc.LocalPort,
 		"base_url_local":          svc.BaseURLLocal,
 		"route_prefix":            svc.RoutePrefix,
+		"routePrefixes":           strings.Join(routePrefixesFor(key), ","),
+		"route_prefixes":          strings.Join(routePrefixesFor(key), ","),
+		"gatewayRouteBlocks":      strings.Join(gatewayRouteBlocksFor(key), ","),
+		"gateway_route_blocks":    strings.Join(gatewayRouteBlocksFor(key), ","),
 		"gateway_health_path":     gatewayHealthPathFor(key),
 		"kafkaConsumerGroup":      group,
 		"kafka_consumer_group":    group,
@@ -306,6 +310,36 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 	return cfg
 }
 
+func routePrefixesFor(service string) []string {
+	switch normalizeLookup(service) {
+	case "device-management-service":
+		return []string{"/api/v1/device-management"}
+	case "subscriptions-service":
+		return []string{"/api/v1/subscription-plans", "/api/v1/subscriptions", "/api/v1/webhooks"}
+	case "alert-service":
+		return []string{"/api/v1/alerts", "/api/v1/thresholds", "/api/v1/inactivity-rules", "/api/v1/notification-preferences"}
+	case "payments-service":
+		return []string{"/api/v1/payment-methods", "/api/v1/payments", "/api/v1/invoices", "/api/v1/webhooks"}
+	case "energy-monitoring-service":
+		return []string{"/api/v1/energy-readings", "/api/v1/energy-meters", "/api/v1/device-consumptions", "/api/v1/consumption-alerts"}
+	case "analytics-service":
+		return []string{"/api/v1/analytics"}
+	case "iam-service":
+		return []string{"/api/v1/auth", "/api/v1/users"}
+	default:
+		return []string{"/api/v1"}
+	}
+}
+
+func gatewayRouteBlocksFor(service string) []string {
+	prefixes := routePrefixesFor(service)
+	blocks := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		blocks = append(blocks, prefix+"/**")
+	}
+	return blocks
+}
+
 func firstOrDefault(values []string, fallback string) string {
 	if len(values) == 0 {
 		return fallback
@@ -324,19 +358,19 @@ func normalizeLookup(v string) string {
 func gatewayHealthPathFor(service string) string {
 	switch normalizeLookup(service) {
 	case "iam-service":
-		return "/api/v1/iam/health"
+		return "/health"
 	case "analytics-service":
 		return "/api/v1/analytics/health"
 	case "device-management-service":
 		return "/api/v1/device-management/health"
 	case "alert-service":
-		return "/api/v1/alerts-service/health"
+		return "/api/v1/health"
 	case "subscriptions-service":
-		return "/api/v1/subscriptions/health"
+		return "/api/v1/health"
 	case "payments-service":
-		return "/api/v1/payments/health"
+		return "/api/v1/health"
 	case "energy-monitoring-service":
-		return "/api/v1/energy/health"
+		return "/api/v1/health"
 	default:
 		return "/api/v1/health"
 	}

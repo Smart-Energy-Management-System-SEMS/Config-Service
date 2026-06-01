@@ -17,7 +17,7 @@ const pending = "PENDING_CONFIGURATION"
 var (
 	portRegex        = regexp.MustCompile(`\d{2,5}`)
 	serviceKeyRegex  = regexp.MustCompile(`[^a-z0-9-]+`)
-	endpointFmtRegex = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)\s+/`)
+	endpointFmtRegex = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE|ANY)\s+/`)
 )
 
 type Loader struct {
@@ -284,9 +284,9 @@ func defaultPortForService(service string) string {
 	case "device-management-service":
 		return "8083"
 	case "iam-service":
-		return "8080"
-	case "subscriptions-service":
 		return "8082"
+	case "subscriptions-service":
+		return "18083"
 	case "payments-service":
 		return "8086"
 	default:
@@ -301,15 +301,15 @@ func defaultPrefixForService(service string) string {
 	case "device-management-service":
 		return "/api/v1/device-management"
 	case "alert-service":
-		return "/api/v1/alerts"
+		return "/api/v1"
 	case "subscriptions-service":
-		return "/api/v1/subscriptions"
+		return "/api/v1"
 	case "payments-service":
-		return "/api/v1/payments"
+		return "/api/v1"
 	case "energy-monitoring-service":
-		return "/api/v1/energy"
+		return "/api/v1"
 	case "iam-service":
-		return "/api/v1/auth"
+		return "/api/v1"
 	default:
 		return "/api/v1"
 	}
@@ -318,8 +318,8 @@ func defaultPrefixForService(service string) string {
 func ensureUniqueLocalPort(svc *model.ServiceConfig) {
 	// Alinea puertos locales esperados por contratos de integracion.
 	if svc.Name == "subscriptions-service" {
-		svc.LocalPort = "8082"
-		svc.BaseURLLocal = "http://localhost:8082"
+		svc.LocalPort = "18083"
+		svc.BaseURLLocal = "http://localhost:18083"
 	}
 	if svc.Name == "alert-service" {
 		svc.LocalPort = "8085"
@@ -332,5 +332,13 @@ func ensureUniqueLocalPort(svc *model.ServiceConfig) {
 	if svc.Name == "energy-monitoring-service" {
 		svc.LocalPort = "8001"
 		svc.BaseURLLocal = "http://localhost:8001"
+	}
+	if svc.Name == "analytics-service" {
+		svc.LocalPort = "8004"
+		svc.BaseURLLocal = "http://localhost:8004"
+	}
+	if svc.Name == "iam-service" {
+		svc.LocalPort = "8082"
+		svc.BaseURLLocal = "http://localhost:8082"
 	}
 }

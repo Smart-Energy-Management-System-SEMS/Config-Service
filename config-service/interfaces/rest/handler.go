@@ -47,7 +47,14 @@ func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
 	if profile == "" {
 		profile = "local"
 	}
-	httpx.WriteJSON(w, http.StatusOK, h.service.ServiceEndpoints(profile))
+	payload := map[string]any{}
+	for key, value := range h.service.ServiceEndpoints(profile) {
+		payload[key] = value
+	}
+	payload["services"] = h.service.GetAllServices()
+	payload["services_map"] = h.service.GetAllServicesMap(profile)
+
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
@@ -116,9 +123,9 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := h.service.KafkaConfig(profile)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"kafkaBrokers":     cfg.BootstrapServers,
-		"securityProtocol": cfg.SecurityProtocol,
-		"saslMechanism":    cfg.SASLMechanism,
+		"kafkaBrokers":      cfg.BootstrapServers,
+		"securityProtocol":  cfg.SecurityProtocol,
+		"saslMechanism":     cfg.SASLMechanism,
 		"bootstrap_servers": cfg.BootstrapServers,
 		"security_protocol": cfg.SecurityProtocol,
 		"sasl_mechanism":    cfg.SASLMechanism,

@@ -1,101 +1,82 @@
-1. Nombre del microservicio:  
-`payments-service` (repositorio: `Microservice-Payments-Service`).
+1. Nombre del microservicio:
+`payments-service`
 
-2. Bounded Context al que pertenece:  
-`Payments / Billing` (pagos, métodos de pago, invoices, webhooks Stripe).
+2. Bounded Context al que pertenece:
+`Payments / Billing` (pagos, metodos de pago, invoices y webhooks Stripe)
 
-3. Puerto local usado:  
-`8086` (`SERVER_PORT`, default en config).
+3. Puerto local usado:
+`8086` (`PORT` > `SERVER_PORT` > fallback `8085`)
 
-4. Base URL local:  
+4. Base URL local:
 `http://localhost:8086`
 
-5. Base URL esperada para deploy:  
-No está hardcodeada. Según README/keep-alive:  
-`https://<nombre-servicio>.onrender.com`  
-Health: `https://<nombre-servicio>.onrender.com/health`.
+5. Base URL esperada para deploy:
+`https://<payments-service-host>`
 
-6. Endpoints principales expuestos al API Gateway:  
-- `GET /api/v1/payments/health`
-- `POST /api/v1/payments/process`  
-- `GET /api/v1/payments/:paymentId`  
-- `GET /api/v1/payments/user/:userId`  
-- `GET /api/v1/invoices/:invoiceId`  
+6. Endpoints principales expuestos al API Gateway:
+- `GET /health`
+- `POST /api/v1/payment-methods`
+- `GET /api/v1/payment-methods/user/:userId`
+- `PUT /api/v1/payment-methods/:paymentMethodId/default`
+- `DELETE /api/v1/payment-methods/:paymentMethodId`
+- `POST /api/v1/payments/process`
+- `GET /api/v1/payments/:paymentId`
+- `GET /api/v1/payments/user/:userId`
+- `GET /api/v1/payments/subscription/:subscriptionId`
+- `GET /api/v1/invoices/:invoiceId`
+- `GET /api/v1/invoices/payment/:paymentId`
+- `POST /api/v1/webhooks/stripe`
 
-7. Prefijo base de rutas:  
-`/api/v1` (`API_BASE_PATH`).
+7. Prefijo base de rutas:
+`/api/v1`
 
-8. Variables de entorno necesarias:  
-- `APP_ENV`  
-- `GIN_MODE` (opcional de runtime)  
-- `SERVER_PORT`  
-- `API_BASE_PATH`  
-- `DB_AUTO_MIGRATE`  
-- `DATABASE_URL`  
-- `STRIPE_SECRET_KEY`  
-- `STRIPE_WEBHOOK_SECRET`  
-- `STRIPE_CURRENCY`  
-- `KAFKA_BROKERS`  
-- `KAFKA_CLIENT_ID`  
-- `KAFKA_PAYMENT_PROCESSED_TOPIC`  
-- `KAFKA_PAYMENT_FAILED_TOPIC`  
-- `KAFKA_INVOICE_GENERATED_TOPIC`  
-- `KAFKA_PAYMENT_METHOD_ADDED_TOPIC`  
-- `KAFKA_SUBSCRIPTION_CREATED_TOPIC`  
-- `KAFKA_SUBSCRIPTION_RENEWAL_REQUESTED_TOPIC`  
+8. Variables de entorno necesarias:
+- `APP_ENV`
+- `GIN_MODE`
+- `SERVER_PORT`
+- `API_BASE_PATH`
+- `DB_AUTO_MIGRATE`
+- `DATABASE_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_CURRENCY`
+- `KAFKA_BROKERS`
+- `KAFKA_CLIENT_ID`
+- `KAFKA_PAYMENT_PROCESSED_TOPIC`
+- `KAFKA_PAYMENT_FAILED_TOPIC`
+- `KAFKA_INVOICE_GENERATED_TOPIC`
+- `KAFKA_PAYMENT_METHOD_ADDED_TOPIC`
+- `KAFKA_SUBSCRIPTION_CREATED_TOPIC`
+- `KAFKA_SUBSCRIPTION_RENEWAL_REQUESTED_TOPIC`
 - `KAFKA_SUBSCRIPTION_CANCELLED_TOPIC`
 
-9. Variables que son secretas y NO deben exponerse desde el Config Service:  
-- `DATABASE_URL`  
-- `STRIPE_SECRET_KEY`  
-- `STRIPE_WEBHOOK_SECRET`  
-- Cualquier credencial embebida en connection strings  
-- `STRIPE_PUBLIC_KEY` no se usa en este microservicio backend (aunque aparezca en `.env`).
+9. Variables que son secretas y NO deben exponerse desde el Config Service:
+- `DATABASE_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 
-10. Configuración Kafka usada:  
-- bootstrap servers: `KAFKA_BROKERS` (ej. `localhost:9092`, en compose `kafka:9092`)  
-- security protocol: no configurado explícitamente (dev local usa PLAINTEXT)  
-- SASL mechanism: no configurado  
-- topics que produce:  
-  - `payment.processed`  
-  - `payment.failed`  
-  - `invoice.generated`  
-  - `payment.method.added`  
-- topics que consume:  
-  - `subscription.created`  
-  - `subscription.renewal.requested`  
-  - `subscription.cancelled`  
-- consumer group: `KAFKA_CLIENT_ID + "-group"` (default: `payments-service-group`)
+10. Configuracion Kafka usada:
+- bootstrap servers: `KAFKA_BROKERS`
+- topics que produce:
+  - `payment.processed`
+  - `payment.failed`
+  - `invoice.generated`
+  - `payment.method.added`
+- topics que consume:
+  - `subscription.created`
+  - `subscription.renewal.requested`
+  - `subscription.cancelled`
+- consumer group: `payments-service-group`
 
-11. Servicios externos que usa:  
-- Stripe API  
-- Kafka cluster/broker  
-- Neon PostgreSQL
+11. Servicios externos que usa:
+- Stripe API
+- Kafka broker
+- PostgreSQL
 
-12. Base de datos usada:  
-- motor: `PostgreSQL` (GORM + driver postgres)  
-- nombre de base de datos: en `DATABASE_URL` (actual `.env`: `neondb`)  
-- variables de conexión: `DATABASE_URL`
+12. Base de datos usada:
+- motor: PostgreSQL
+- variables de conexion: `DATABASE_URL`
 
-13. Dependencias de otros microservicios:  
-- Dependencia asíncrona por eventos de suscripciones (consume topics de subscription).  
-- No hay llamadas HTTP directas a otros microservicios en este repo.
-
-14. Configuración que actualmente se repite y debería moverse al Config Service:  
-- `APP_ENV`, `GIN_MODE`, `SERVER_PORT`, `API_BASE_PATH`, `DB_AUTO_MIGRATE`  
-- `KAFKA_BROKERS`, `KAFKA_CLIENT_ID`  
-- Convenciones de nombres de topics Kafka  
-- `STRIPE_CURRENCY`  
-- URLs por ambiente (local/staging/prod) y health path
-
-15. Recomendación final de cómo debería registrarse este microservicio en el Config Service:  
-Registrar `payments-service` con secciones:  
-- `service`: nombre, boundedContext, puerto, basePath, healthPath  
-- `urls`: local y deploy por ambiente  
-- `gateway`: rutas públicas/protegidas  
-- `kafka`: brokers, clientId, consumerGroup, topics.produce/consume  
-- `database`: engine + referencia a secreto (`DATABASE_URL`)  
-- `integrations`: stripe (solo referencias de secretos, no valores)  
-- `secrets`: gestionados fuera del config público (vault/secret manager).  
-
-Nota importante: en tu `.env` actual hay credenciales reales visibles; conviene rotarlas.
+13. Dependencias de otros microservicios:
+- Dependencia asincrona por eventos de suscripciones.
+- No hay llamadas HTTP directas confirmadas.
