@@ -321,7 +321,7 @@ func routePrefixesFor(service string) []string {
 	case "payments-service":
 		return []string{"/api/v1/payment-methods", "/api/v1/payments", "/api/v1/invoices", "/api/v1/webhooks"}
 	case "energy-monitoring-service":
-		return []string{"/api/v1/energy-readings", "/api/v1/energy-meters", "/api/v1/device-consumptions", "/api/v1/consumption-alerts"}
+		return []string{"/api/v1/energy", "/api/v1/energy-readings", "/api/v1/energy-meters", "/api/v1/device-consumptions", "/api/v1/consumption-alerts"}
 	case "analytics-service":
 		return []string{"/api/v1/analytics"}
 	case "iam-service":
