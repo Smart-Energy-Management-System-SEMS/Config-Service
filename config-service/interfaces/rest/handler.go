@@ -2,10 +2,12 @@ package rest
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"config-service/config-service/application/services"
 	httpx "config-service/config-service/infrastructure/http"
+	"config-service/shared"
 )
 
 type Handler struct {
@@ -67,7 +69,14 @@ func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "service name is required")
 		return
 	}
-	service, err := h.service.GetServiceByName(name)
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
+	service, err := h.service.GetServiceCompatibilityConfig(name, profile)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
 		return
@@ -123,30 +132,60 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := h.service.KafkaConfig(profile)
 	brokers := splitCSV(cfg.BootstrapServers)
+	servicesMap := h.service.GetAllServicesMap(profile)
+	officialTopics := map[string]any{}
+	allTopicNames := map[string]struct{}{}
+	for serviceName, serviceCfg := range servicesMap {
+		shortName := serviceCfg["service"]
+		if shortName == nil {
+			shortName = serviceName
+		}
+		officialTopics[shortName.(string)] = serviceCfg["kafka"]
+		kafkaCfg, _ := serviceCfg["kafka"].(map[string]any)
+		for _, key := range []string{"consumerTopics", "producerTopics"} {
+			topicMap, _ := kafkaCfg[key].(map[string]string)
+			for _, topicName := range topicMap {
+				allTopicNames[topicName] = struct{}{}
+			}
+		}
+	}
+	flatTopics := make([]string, 0, len(allTopicNames))
+	for topicName := range allTopicNames {
+		flatTopics = append(flatTopics, topicName)
+	}
+	sort.Strings(flatTopics)
+	saslUsername := shared.EnvOrDefault("KAFKA_USERNAME", shared.EnvOrDefault("KAFKA_SASL_USERNAME", ""))
+	saslPassword := shared.EnvOrDefault("KAFKA_PASSWORD", shared.EnvOrDefault("KAFKA_SASL_PASSWORD", ""))
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"kafkaBrokers":      cfg.BootstrapServers,
-		"securityProtocol":  cfg.SecurityProtocol,
-		"saslMechanism":     cfg.SASLMechanism,
-		"bootstrapServers":  cfg.BootstrapServers,
-		"bootstrap_servers": brokers,
-		"client_id":         "config-service",
-		"security_protocol": cfg.SecurityProtocol,
-		"sasl_mechanism":    cfg.SASLMechanism,
+		"kafkaBrokers":       cfg.BootstrapServers,
+		"brokers":            cfg.BootstrapServers,
+		"securityProtocol":   cfg.SecurityProtocol,
+		"saslMechanism":      cfg.SASLMechanism,
+		"saslUsername":       saslUsername,
+		"saslPassword":       saslPassword,
+		"bootstrapServers":   cfg.BootstrapServers,
+		"bootstrap_servers":  brokers,
+		"client_id":          "config-service",
+		"security_protocol":  cfg.SecurityProtocol,
+		"sasl_mechanism":     cfg.SASLMechanism,
+		"officialTopics":     officialTopics,
+		"officialTopicNames": flatTopics,
+		"services":           officialTopics,
 		"topics": map[string]string{
-			"payment_processed":               "payment.processed",
-			"payment_failed":                  "payment.failed",
-			"invoice_generated":               "invoice.generated",
-			"payment_method_added":            "payment.method.added",
-			"subscription_created":            "subscription.created",
-			"subscription_renewal_requested":  "subscription.renewal.requested",
-			"subscription_cancelled":          "subscription.cancelled",
+			"payment_processed":              "payment.processed",
+			"payment_failed":                 "payment.failed",
+			"invoice_generated":              "invoice.generated",
+			"payment_method_added":           "payment.method.added",
+			"subscription_created":           "subscription.created",
+			"subscription_renewal_requested": "subscription.renewal.requested",
+			"subscription_cancelled":         "subscription.cancelled",
 		},
-		"producedTopics":    cfg.ProducedTopics,
-		"consumedTopics":    cfg.ConsumedTopics,
-		"consumerGroups":    cfg.ConsumerGroups,
-		"produced_topics":   cfg.ProducedTopics,
-		"consumed_topics":   cfg.ConsumedTopics,
-		"consumer_groups":   cfg.ConsumerGroups,
+		"producedTopics":  cfg.ProducedTopics,
+		"consumedTopics":  cfg.ConsumedTopics,
+		"consumerGroups":  cfg.ConsumerGroups,
+		"produced_topics": cfg.ProducedTopics,
+		"consumed_topics": cfg.ConsumedTopics,
+		"consumer_groups": cfg.ConsumerGroups,
 	})
 }
 

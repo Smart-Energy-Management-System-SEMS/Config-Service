@@ -157,12 +157,14 @@ func sortTopics(m map[string][]string) {
 
 func producedTopicsFor(service string) []string {
 	switch normalizeLookup(service) {
+	case "alert-service":
+		return []string{"alert.created"}
 	case "analytics-service":
 		return []string{"analytics.anomaly.detected", "analytics.bill_prediction.generated", "analytics.consumption_ranking.generated", "analytics.device_identified", "analytics.recommendation.generated"}
 	case "device-management-service":
 		return []string{"device.configuration.updated", "device.event.recorded", "device.linked", "device.registered", "device.status.updated", "device.unlinked"}
 	case "energy-monitoring-service":
-		return []string{"energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
+		return []string{"energy.consumption.recorded", "energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
 	case "iam-service":
 		return []string{"iam.role.assigned", "iam.user.logged-in", "iam.user.registered"}
 	case "payments-service":
@@ -179,7 +181,7 @@ func consumedTopicsFor(service string) []string {
 	case "alert-service":
 		return []string{"energy.consumption.recorded"}
 	case "analytics-service":
-		return []string{"device.registered", "device.updated", "energy.consumption.recorded"}
+		return []string{"device.registered", "device.status.updated", "energy.consumption.recorded"}
 	case "energy-monitoring-service":
 		return []string{"analytics.anomaly.detected", "monitoring.reading.ingest"}
 	case "iam-service":
@@ -263,6 +265,8 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 	}
 
 	cfg["kafka"] = serviceKafkaBlock(key, brokers, group, produced, consumed)
+	cfg["service"] = serviceShortName(key)
+	cfg["serviceConfig"] = svc
 
 	if key == "payments-service" {
 		const paymentsPort = "8086"
@@ -306,6 +310,7 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		cfg["kafka.sasl_mechanism"] = kafkaSASLMechanism
 		cfg["kafka.topics.reading_ingest"] = "monitoring.reading.ingest"
 		cfg["kafka.topics.anomaly_detected"] = "analytics.anomaly.detected"
+		cfg["kafka.topics.energy_consumption_recorded"] = "energy.consumption.recorded"
 		cfg["kafka.topics.alert_created"] = "monitoring.alert.created"
 		cfg["kafka.topics.reading_processed"] = "monitoring.reading.processed"
 		cfg["kafka.topics.energy_reading_created"] = "energy.reading.created"
@@ -313,12 +318,12 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 
 	if key == "device-management-service" {
 		cfg["kafkaTopics"] = map[string]string{
-			"deviceRegistered":          "device.registered",
-			"deviceStatusUpdated":       "device.status.updated",
-			"deviceLinked":              "device.linked",
-			"deviceUnlinked":            "device.unlinked",
+			"deviceRegistered":           "device.registered",
+			"deviceStatusUpdated":        "device.status.updated",
+			"deviceLinked":               "device.linked",
+			"deviceUnlinked":             "device.unlinked",
 			"deviceConfigurationUpdated": "device.configuration.updated",
-			"deviceEventRecorded":       "device.event.recorded",
+			"deviceEventRecorded":        "device.event.recorded",
 		}
 	}
 
@@ -376,15 +381,22 @@ func firstOrDefault(values []string, fallback string) string {
 }
 
 func serviceKafkaBlock(service, brokers, group string, produced, consumed []string) map[string]any {
+	consumerTopics := consumerTopicMap(service, consumed)
+	producerTopics := producerTopicMap(service, produced)
 	block := map[string]any{
-		"bootstrapServers": brokers,
+		"brokers":           brokers,
+		"bootstrapServers":  brokers,
 		"bootstrap_servers": brokers,
-		"consumerGroup": group,
-		"consumer_group": group,
-		"consumedTopics": consumed,
-		"consumed_topics": consumed,
-		"producedTopics": producedTopicMap(service, produced),
-		"produced_topics": producedTopicMap(service, produced),
+		"consumerGroup":     group,
+		"consumer_group":    group,
+		"consumerTopics":    consumerTopics,
+		"consumer_topics":   consumerTopics,
+		"producerTopics":    producerTopics,
+		"producer_topics":   producerTopics,
+		"consumedTopics":    consumed,
+		"consumed_topics":   consumed,
+		"producedTopics":    producerTopics,
+		"produced_topics":   producerTopics,
 	}
 
 	if normalizeLookup(service) == "device-management-service" {
@@ -423,6 +435,123 @@ func producedTopicMap(service string, topics []string) map[string]string {
 	}
 
 	return out
+}
+
+func producerTopicMap(service string, topics []string) map[string]string {
+	switch normalizeLookup(service) {
+	case "alert-service":
+		return map[string]string{
+			"alertCreated": "alert.created",
+		}
+	case "analytics-service":
+		return map[string]string{
+			"billPredictionGenerated":     "analytics.bill_prediction.generated",
+			"recommendationGenerated":     "analytics.recommendation.generated",
+			"anomalyDetected":             "analytics.anomaly.detected",
+			"deviceIdentified":            "analytics.device_identified",
+			"consumptionRankingGenerated": "analytics.consumption_ranking.generated",
+		}
+	case "device-management-service":
+		return map[string]string{
+			"deviceRegistered":           "device.registered",
+			"deviceStatusUpdated":        "device.status.updated",
+			"deviceLinked":               "device.linked",
+			"deviceUnlinked":             "device.unlinked",
+			"deviceConfigurationUpdated": "device.configuration.updated",
+			"deviceEventRecorded":        "device.event.recorded",
+		}
+	case "energy-monitoring-service":
+		return map[string]string{
+			"energyConsumptionRecorded": "energy.consumption.recorded",
+			"alertCreated":              "monitoring.alert.created",
+			"readingProcessed":          "monitoring.reading.processed",
+			"energyReadingCreated":      "energy.reading.created",
+		}
+	case "iam-service":
+		return map[string]string{
+			"userRegistered": "iam.user.registered",
+			"userLoggedIn":   "iam.user.logged-in",
+			"roleAssigned":   "iam.role.assigned",
+		}
+	case "payments-service":
+		return map[string]string{
+			"paymentProcessed":   "payment.processed",
+			"paymentFailed":      "payment.failed",
+			"invoiceGenerated":   "invoice.generated",
+			"paymentMethodAdded": "payment.method.added",
+		}
+	case "subscriptions-service":
+		return map[string]string{
+			"subscriptionCreated":     "subscription.created",
+			"subscriptionCancelled":   "subscription.cancelled",
+			"subscriptionPlanChanged": "subscription.plan.changed",
+			"subscriptionExpired":     "subscription.expired",
+			"subscriptionUpdated":     "subscription.updated",
+		}
+	default:
+		out := map[string]string{}
+		for _, topic := range topics {
+			out[topic] = topic
+		}
+		return out
+	}
+}
+
+func consumerTopicMap(service string, topics []string) map[string]string {
+	switch normalizeLookup(service) {
+	case "alert-service":
+		return map[string]string{
+			"energyConsumptionRecorded": "energy.consumption.recorded",
+		}
+	case "analytics-service":
+		return map[string]string{
+			"energyConsumptionRecorded": "energy.consumption.recorded",
+			"deviceRegistered":          "device.registered",
+			"deviceStatusUpdated":       "device.status.updated",
+		}
+	case "energy-monitoring-service":
+		return map[string]string{
+			"readingIngest":   "monitoring.reading.ingest",
+			"anomalyDetected": "analytics.anomaly.detected",
+		}
+	case "iam-service":
+		return map[string]string{
+			"roleAssignmentRequested": "iam.role-assignment.requested",
+		}
+	case "payments-service":
+		return map[string]string{
+			"subscriptionCreated":          "subscription.created",
+			"subscriptionCancelled":        "subscription.cancelled",
+			"subscriptionRenewalRequested": "subscription.renewal.requested",
+		}
+	default:
+		out := map[string]string{}
+		for _, topic := range topics {
+			out[topic] = topic
+		}
+		return out
+	}
+}
+
+func serviceShortName(service string) string {
+	switch normalizeLookup(service) {
+	case "alert-service":
+		return "alerts"
+	case "device-management-service":
+		return "device-management"
+	case "energy-monitoring-service":
+		return "energy-monitoring"
+	case "iam-service":
+		return "iam"
+	case "analytics-service":
+		return "analytics"
+	case "subscriptions-service":
+		return "subscriptions"
+	case "payments-service":
+		return "payments"
+	default:
+		return normalizeLookup(service)
+	}
 }
 
 func normalizeLookup(v string) string {
