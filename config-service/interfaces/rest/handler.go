@@ -122,16 +122,31 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 		profile = "local"
 	}
 	cfg := h.service.KafkaConfig(profile)
+	brokers := splitCSV(cfg.BootstrapServers)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"kafkaBrokers":      cfg.BootstrapServers,
 		"securityProtocol":  cfg.SecurityProtocol,
 		"saslMechanism":     cfg.SASLMechanism,
-		"bootstrap_servers": cfg.BootstrapServers,
+		"bootstrapServers":  cfg.BootstrapServers,
+		"bootstrap_servers": brokers,
+		"client_id":         "config-service",
 		"security_protocol": cfg.SecurityProtocol,
 		"sasl_mechanism":    cfg.SASLMechanism,
+		"topics": map[string]string{
+			"payment_processed":               "payment.processed",
+			"payment_failed":                  "payment.failed",
+			"invoice_generated":               "invoice.generated",
+			"payment_method_added":            "payment.method.added",
+			"subscription_created":            "subscription.created",
+			"subscription_renewal_requested":  "subscription.renewal.requested",
+			"subscription_cancelled":          "subscription.cancelled",
+		},
 		"producedTopics":    cfg.ProducedTopics,
 		"consumedTopics":    cfg.ConsumedTopics,
 		"consumerGroups":    cfg.ConsumerGroups,
+		"produced_topics":   cfg.ProducedTopics,
+		"consumed_topics":   cfg.ConsumedTopics,
+		"consumer_groups":   cfg.ConsumerGroups,
 	})
 }
 
@@ -141,6 +156,18 @@ func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, h.service.GatewayConfig())
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {

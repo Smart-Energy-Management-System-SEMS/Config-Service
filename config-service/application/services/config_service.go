@@ -35,11 +35,11 @@ func (s *ConfigService) GetAllServices() []model.ServiceConfig {
 	return s.services
 }
 
-func (s *ConfigService) GetAllServicesMap(profile string) map[string]map[string]string {
+func (s *ConfigService) GetAllServicesMap(profile string) map[string]map[string]any {
 	if strings.TrimSpace(profile) == "" {
 		profile = "local"
 	}
-	out := map[string]map[string]string{}
+	out := map[string]map[string]any{}
 	for _, svc := range s.services {
 		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc, profile)
 	}
@@ -162,13 +162,13 @@ func producedTopicsFor(service string) []string {
 	case "device-management-service":
 		return []string{"device.configuration.updated", "device.event.recorded", "device.linked", "device.registered", "device.status.updated", "device.unlinked"}
 	case "energy-monitoring-service":
-		return []string{"monitoring.alert.created", "monitoring.reading.processed"}
+		return []string{"energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
 	case "iam-service":
 		return []string{"iam.role.assigned", "iam.user.logged-in", "iam.user.registered"}
 	case "payments-service":
 		return []string{"invoice.generated", "payment.failed", "payment.method.added", "payment.processed"}
 	case "subscriptions-service":
-		return []string{"SubscriptionCancelled", "SubscriptionCreated", "SubscriptionExpired", "SubscriptionPlanChanged", "SubscriptionUpdated"}
+		return []string{"subscription.cancelled", "subscription.created", "subscription.expired", "subscription.plan.changed", "subscription.updated"}
 	default:
 		return []string{}
 	}
@@ -223,7 +223,7 @@ func languageHint(service string) string {
 	}
 }
 
-func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map[string]string, error) {
+func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map[string]any, error) {
 	svc, err := s.GetServiceByName(name)
 	if err != nil {
 		return nil, err
@@ -231,17 +231,18 @@ func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map
 	return s.compatibilityConfigFor(name, svc, profile), nil
 }
 
-func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig, profile string) map[string]string {
+func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig, profile string) map[string]any {
 	key := normalizeLookup(name)
 	brokers := resolveKafkaBootstrap(profile)
 	group := consumerGroupFor(key)
 	if group == "PENDING_CONFIGURATION" {
 		group = key + "-group"
 	}
+	produced := producedTopicsFor(key)
 	consumed := consumedTopicsFor(key)
 	consumptionTopic := firstOrDefault(consumed, "PENDING_CONFIGURATION")
 
-	cfg := map[string]string{
+	cfg := map[string]any{
 		"serviceName":             svc.Name,
 		"service_name":            svc.Name,
 		"serverPort":              svc.LocalPort,
@@ -260,6 +261,8 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		"kafkaBrokers":            brokers,
 		"kafka_brokers":           brokers,
 	}
+
+	cfg["kafka"] = serviceKafkaBlock(key, brokers, group, produced, consumed)
 
 	if key == "payments-service" {
 		const paymentsPort = "8086"
@@ -305,6 +308,31 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		cfg["kafka.topics.anomaly_detected"] = "analytics.anomaly.detected"
 		cfg["kafka.topics.alert_created"] = "monitoring.alert.created"
 		cfg["kafka.topics.reading_processed"] = "monitoring.reading.processed"
+		cfg["kafka.topics.energy_reading_created"] = "energy.reading.created"
+	}
+
+	if key == "device-management-service" {
+		cfg["kafkaTopics"] = map[string]string{
+			"deviceRegistered":          "device.registered",
+			"deviceStatusUpdated":       "device.status.updated",
+			"deviceLinked":              "device.linked",
+			"deviceUnlinked":            "device.unlinked",
+			"deviceConfigurationUpdated": "device.configuration.updated",
+			"deviceEventRecorded":       "device.event.recorded",
+		}
+	}
+
+	if key == "subscriptions-service" {
+		cfg["topicSubscriptionCreated"] = "subscription.created"
+		cfg["topicSubscriptionCancelled"] = "subscription.cancelled"
+		cfg["topicSubscriptionPlanChanged"] = "subscription.plan.changed"
+		cfg["topicSubscriptionExpired"] = "subscription.expired"
+		cfg["topicSubscriptionUpdated"] = "subscription.updated"
+		cfg["kafkaTopicSubscriptionCreated"] = "subscription.created"
+		cfg["kafkaTopicSubscriptionCancelled"] = "subscription.cancelled"
+		cfg["kafkaTopicSubscriptionPlanChanged"] = "subscription.plan.changed"
+		cfg["kafkaTopicSubscriptionExpired"] = "subscription.expired"
+		cfg["kafkaTopicSubscriptionUpdated"] = "subscription.updated"
 	}
 
 	return cfg
@@ -345,6 +373,56 @@ func firstOrDefault(values []string, fallback string) string {
 		return fallback
 	}
 	return values[0]
+}
+
+func serviceKafkaBlock(service, brokers, group string, produced, consumed []string) map[string]any {
+	block := map[string]any{
+		"bootstrapServers": brokers,
+		"bootstrap_servers": brokers,
+		"consumerGroup": group,
+		"consumer_group": group,
+		"consumedTopics": consumed,
+		"consumed_topics": consumed,
+		"producedTopics": producedTopicMap(service, produced),
+		"produced_topics": producedTopicMap(service, produced),
+	}
+
+	if normalizeLookup(service) == "device-management-service" {
+		block["kafkaTopics"] = map[string]string{
+			"deviceRegistered":           "device.registered",
+			"deviceStatusUpdated":        "device.status.updated",
+			"deviceLinked":               "device.linked",
+			"deviceUnlinked":             "device.unlinked",
+			"deviceConfigurationUpdated": "device.configuration.updated",
+			"deviceEventRecorded":        "device.event.recorded",
+		}
+	}
+
+	return block
+}
+
+func producedTopicMap(service string, topics []string) map[string]string {
+	out := map[string]string{}
+	for _, topic := range topics {
+		out[topic] = topic
+	}
+
+	switch normalizeLookup(service) {
+	case "analytics-service":
+		out["billPredictionGenerated"] = "analytics.bill_prediction.generated"
+		out["recommendationGenerated"] = "analytics.recommendation.generated"
+		out["anomalyDetected"] = "analytics.anomaly.detected"
+		out["deviceIdentified"] = "analytics.device_identified"
+		out["consumptionRankingGenerated"] = "analytics.consumption_ranking.generated"
+	case "subscriptions-service":
+		out["subscriptionCreated"] = "subscription.created"
+		out["subscriptionCancelled"] = "subscription.cancelled"
+		out["subscriptionPlanChanged"] = "subscription.plan.changed"
+		out["subscriptionExpired"] = "subscription.expired"
+		out["subscriptionUpdated"] = "subscription.updated"
+	}
+
+	return out
 }
 
 func normalizeLookup(v string) string {
