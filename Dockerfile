@@ -14,10 +14,10 @@ WORKDIR /app
 
 RUN adduser -D -H -u 10001 appuser
 COPY --from=builder /out/config-service /app/config-service
-COPY Config /app/Config
+COPY Rutas /app/Rutas
 
 ENV PORT=8080
-ENV CONFIG_SOURCE_PATH=Config
+ENV CONFIG_SOURCE_PATH=Rutas
 EXPOSE 8080
 
 USER appuser

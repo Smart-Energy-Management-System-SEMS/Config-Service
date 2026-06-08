@@ -11,8 +11,43 @@ import (
 	"config-service/shared"
 )
 
+var officialTopics = []string{
+	"alert.created",
+	"analytics.anomaly.detected",
+	"analytics.bill_prediction.generated",
+	"analytics.consumption_ranking.generated",
+	"analytics.device_identified",
+	"analytics.recommendation.generated",
+	"device.configuration.updated",
+	"device.event.recorded",
+	"device.linked",
+	"device.registered",
+	"device.status.updated",
+	"device.unlinked",
+	"energy.consumption.recorded",
+	"energy.reading.created",
+	"iam.role-assignment.requested",
+	"iam.role.assigned",
+	"iam.user.logged-in",
+	"iam.user.registered",
+	"invoice.generated",
+	"monitoring.alert.created",
+	"monitoring.reading.ingest",
+	"monitoring.reading.processed",
+	"payment.failed",
+	"payment.method.added",
+	"payment.processed",
+	"subscription.cancelled",
+	"subscription.created",
+	"subscription.expired",
+	"subscription.plan.changed",
+	"subscription.renewal.requested",
+	"subscription.updated",
+}
+
 type ConfigService struct {
-	services []model.ServiceConfig
+	services        []model.ServiceConfig
+	inconsistencies []model.TopicInconsistency
 }
 
 func NewConfigService(loader *configuration.Loader) (*ConfigService, error) {
@@ -20,7 +55,12 @@ func NewConfigService(loader *configuration.Loader) (*ConfigService, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ConfigService{services: services}, nil
+
+	filtered, inconsistencies := normalizeServices(services)
+	return &ConfigService{
+		services:        filtered,
+		inconsistencies: inconsistencies,
+	}, nil
 }
 
 func (s *ConfigService) Health() model.HealthResponse {
@@ -32,17 +72,8 @@ func (s *ConfigService) Health() model.HealthResponse {
 }
 
 func (s *ConfigService) GetAllServices() []model.ServiceConfig {
-	return s.services
-}
-
-func (s *ConfigService) GetAllServicesMap(profile string) map[string]map[string]any {
-	if strings.TrimSpace(profile) == "" {
-		profile = "local"
-	}
-	out := map[string]map[string]any{}
-	for _, svc := range s.services {
-		out[svc.Name] = s.compatibilityConfigFor(svc.Name, svc, profile)
-	}
+	out := make([]model.ServiceConfig, len(s.services))
+	copy(out, s.services)
 	return out
 }
 
@@ -56,37 +87,41 @@ func (s *ConfigService) GetServiceByName(name string) (model.ServiceConfig, erro
 	return model.ServiceConfig{}, errors.New("service not found")
 }
 
+func (s *ConfigService) GetInconsistencies() []model.TopicInconsistency {
+	out := make([]model.TopicInconsistency, len(s.inconsistencies))
+	copy(out, s.inconsistencies)
+	return out
+}
+
 func (s *ConfigService) GatewayConfig() model.GatewayConfig {
 	return model.GatewayConfig{
 		Port:               osOrEmpty("API_GATEWAY_PORT"),
-		BaseURLLocal:       osOrEmpty("API_GATEWAY_BASE_URL_LOCAL"),
+		BaseURLLocal:       shared.EnvOrDefault("API_GATEWAY_URL", "http://localhost:8081"),
 		BaseURLDeploy:      osOrEmpty("API_GATEWAY_BASE_URL_DEPLOY"),
 		CORSAllowedOrigins: osOrEmpty("API_GATEWAY_CORS_ALLOWED_ORIGINS"),
 		AuthRequired:       osOrEmpty("API_GATEWAY_AUTH_REQUIRED"),
 		TimeoutSeconds:     osOrEmpty("API_GATEWAY_TIMEOUT_SECONDS"),
+		Services:           s.GetAllServices(),
 	}
 }
 
 func (s *ConfigService) KafkaConfig(profile string) model.KafkaConfig {
 	produced := map[string][]string{}
 	consumed := map[string][]string{}
-	groups := map[string]string{}
 	for _, svc := range s.services {
-		produced[svc.Name] = producedTopicsFor(svc.Name)
-		consumed[svc.Name] = consumedTopicsFor(svc.Name)
-		groups[svc.Name] = consumerGroupFor(svc.Name)
+		produced[svc.Name] = append([]string{}, svc.TopicsPublished...)
+		consumed[svc.Name] = append([]string{}, svc.TopicsConsumed...)
 	}
-
-	sortTopics(produced)
-	sortTopics(consumed)
 
 	return model.KafkaConfig{
 		BootstrapServers: resolveKafkaBootstrap(profile),
+		Brokers:          splitCSV(resolveKafkaBootstrap(profile)),
 		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
 		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", ""),
+		OfficialTopics:   append([]string{}, officialTopics...),
 		ProducedTopics:   produced,
 		ConsumedTopics:   consumed,
-		ConsumerGroups:   groups,
+		Inconsistencies:  s.GetInconsistencies(),
 	}
 }
 
@@ -94,23 +129,15 @@ func (s *ConfigService) ServiceEndpoints(profile string) map[string]string {
 	profile = normalizeProfile(profile)
 	azure := profile == "azure"
 
-	deviceLocal := serviceLocalURL(s.services, "device-management-service", "http://localhost:8083")
-	alertLocal := serviceLocalURL(s.services, "alert-service", "http://localhost:8085")
-	analyticsLocal := serviceLocalURL(s.services, "analytics-service", "http://localhost:8004")
-	energyLocal := serviceLocalURL(s.services, "energy-monitoring-service", "http://localhost:8001")
-	iamLocal := serviceLocalURL(s.services, "iam-service", "http://localhost:8082")
-	subscriptionsLocal := serviceLocalURL(s.services, "subscriptions-service", "http://localhost:18083")
-	paymentsLocal := serviceLocalURL(s.services, "payments-service", "http://localhost:8086")
-
 	return map[string]string{
 		"apiGatewayUrl":              resolveServiceURL("API_GATEWAY_URL", "API_GATEWAY_URL_AZURE", "http://localhost:8081", azure),
-		"iamServiceUrl":              resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", iamLocal, azure),
-		"deviceManagementServiceUrl": resolveServiceURL("DEVICE_MANAGEMENT_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", deviceLocal, azure),
-		"subscriptionsServiceUrl":    resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", subscriptionsLocal, azure),
-		"paymentsServiceUrl":         resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", paymentsLocal, azure),
-		"alertServiceUrl":            resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", alertLocal, azure),
-		"analyticsServiceUrl":        resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", analyticsLocal, azure),
-		"energyMonitoringServiceUrl": resolveServiceURL("ENERGY_MONITORING_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", energyLocal, azure),
+		"iamServiceUrl":              resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", serviceURL(s.services, "iam-service", "http://localhost:8082"), azure),
+		"deviceManagementServiceUrl": resolveServiceURL("DEVICE_MANAGEMENT_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", serviceURL(s.services, "device-management-service", "http://localhost:8083"), azure),
+		"subscriptionsServiceUrl":    resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", serviceURL(s.services, "subscriptions-service", "http://localhost:18083"), azure),
+		"paymentsServiceUrl":         resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", serviceURL(s.services, "payments-service", "http://localhost:8086"), azure),
+		"alertServiceUrl":            resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", serviceURL(s.services, "alert-service", "http://localhost:8085"), azure),
+		"analyticsServiceUrl":        resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", serviceURL(s.services, "analytics-service", "http://localhost:8004"), azure),
+		"energyMonitoringServiceUrl": resolveServiceURL("ENERGY_MONITORING_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", serviceURL(s.services, "energy-monitoring-service", "http://localhost:8001"), azure),
 		"kafkaBrokers":               resolveKafkaBootstrap(profile),
 	}
 }
@@ -129,430 +156,111 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 		"KAFKA_BOOTSTRAP_SERVERS": resolveKafkaBootstrap(profile),
 		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
 		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
-		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config"),
+		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Rutas"),
 	}
 
 	return model.RuntimeConfigResponse{
 		Service:       svc.Name,
 		Profile:       profile,
-		ConfigVersion: "v1",
+		ConfigVersion: "v2",
 		Common:        common,
 		ServiceConfig: svc,
 		Kafka:         s.KafkaConfig(profile),
 		Gateway:       s.GatewayConfig(),
 		Metadata: map[string]interface{}{
-			"served_at_utc": time.Now().UTC().Format(time.RFC3339),
-			"language_hint": languageHint(svc.Name),
+			"served_at_utc":    time.Now().UTC().Format(time.RFC3339),
+			"inconsistencies":  s.GetInconsistencies(),
+			"official_topics":  append([]string{}, officialTopics...),
+			"source_directory": shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Rutas"),
 		},
 	}, nil
 }
 
-func osOrEmpty(k string) string { return shared.EnvOrDefault(k, "") }
+func normalizeServices(services []model.ServiceConfig) ([]model.ServiceConfig, []model.TopicInconsistency) {
+	allowed := officialTopicSet()
+	inconsistencies := []model.TopicInconsistency{}
+	out := make([]model.ServiceConfig, 0, len(services))
 
-func sortTopics(m map[string][]string) {
-	for _, topics := range m {
-		sort.Strings(topics)
-	}
-}
-
-func producedTopicsFor(service string) []string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return []string{"alert.created"}
-	case "analytics-service":
-		return []string{"analytics.anomaly.detected", "analytics.bill_prediction.generated", "analytics.consumption_ranking.generated", "analytics.device_identified", "analytics.recommendation.generated"}
-	case "device-management-service":
-		return []string{"device.configuration.updated", "device.event.recorded", "device.linked", "device.registered", "device.status.updated", "device.unlinked"}
-	case "energy-monitoring-service":
-		return []string{"energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
-	case "iam-service":
-		return []string{"iam.role.assigned", "iam.user.logged-in", "iam.user.registered"}
-	case "payments-service":
-		return []string{"invoice.generated", "payment.failed", "payment.method.added", "payment.processed"}
-	case "subscriptions-service":
-		return []string{"subscription.cancelled", "subscription.created", "subscription.expired", "subscription.plan.changed", "subscription.updated"}
-	default:
-		return []string{}
-	}
-}
-
-func consumedTopicsFor(service string) []string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return []string{"analytics.anomaly.detected", "energy.reading.created"}
-	case "analytics-service":
-		return []string{"device.registered", "device.status.updated", "energy.reading.created"}
-	case "energy-monitoring-service":
-		return []string{"analytics.anomaly.detected", "monitoring.reading.ingest"}
-	case "iam-service":
-		return []string{"iam.role-assignment.requested"}
-	case "payments-service":
-		return []string{"subscription.cancelled", "subscription.created", "subscription.renewal.requested"}
-	default:
-		return []string{}
-	}
-}
-
-func consumerGroupFor(service string) string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return "alert-service-group"
-	case "analytics-service":
-		return "analytics-service-group"
-	case "device-management-service":
-		return "device-management-group"
-	case "energy-monitoring-service":
-		return "energy-monitoring-group"
-	case "iam-service":
-		return "iam-service"
-	case "payments-service":
-		return "payments-service-group"
-	case "subscriptions-service":
-		return "subscriptions-service-group"
-	default:
-		return "PENDING_CONFIGURATION"
-	}
-}
-
-func languageHint(service string) string {
-	switch normalizeLookup(service) {
-	case "iam-service":
-		return "java"
-	case "analytics-service", "energy-monitoring-service":
-		return "python"
-	default:
-		return "go"
-	}
-}
-
-func (s *ConfigService) GetServiceCompatibilityConfig(name, profile string) (map[string]any, error) {
-	svc, err := s.GetServiceByName(name)
-	if err != nil {
-		return nil, err
-	}
-	return s.compatibilityConfigFor(name, svc, profile), nil
-}
-
-func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceConfig, profile string) map[string]any {
-	key := normalizeLookup(name)
-	brokers := resolveKafkaBootstrap(profile)
-	group := consumerGroupFor(key)
-	if group == "PENDING_CONFIGURATION" {
-		group = key + "-group"
-	}
-	produced := producedTopicsFor(key)
-	consumed := consumedTopicsFor(key)
-	consumptionTopic := firstOrDefault(consumed, "PENDING_CONFIGURATION")
-
-	cfg := map[string]any{
-		"serviceName":              svc.Name,
-		"service_name":             svc.Name,
-		"serverPort":               svc.LocalPort,
-		"server_port":              svc.LocalPort,
-		"base_url_local":           svc.BaseURLLocal,
-		"route_prefix":             svc.RoutePrefix,
-		"routePrefixes":            strings.Join(routePrefixesFor(key), ","),
-		"route_prefixes":           strings.Join(routePrefixesFor(key), ","),
-		"gatewayRouteBlocks":       strings.Join(gatewayRouteBlocksFor(key), ","),
-		"gateway_route_blocks":     strings.Join(gatewayRouteBlocksFor(key), ","),
-		"gateway_health_path":      gatewayHealthPathFor(key),
-		"kafkaConsumerGroup":       group,
-		"kafka_consumer_group":     group,
-		"kafkaConsumptionTopic":    consumptionTopic,
-		"kafka_consumption_topic":  consumptionTopic,
-		"kafkaConsumptionTopics":   consumed,
-		"kafka_consumption_topics": consumed,
-		"kafkaBrokers":             brokers,
-		"kafka_brokers":            brokers,
+	for _, svc := range services {
+		svc.TopicsPublished, inconsistencies = filterTopics(svc.Name, "published", svc.TopicsPublished, allowed, inconsistencies)
+		svc.TopicsConsumed, inconsistencies = filterTopics(svc.Name, "consumed", svc.TopicsConsumed, allowed, inconsistencies)
+		svc.Routes = uniqueStrings(svc.Routes)
+		svc.TopicsPublished = uniqueStrings(svc.TopicsPublished)
+		svc.TopicsConsumed = uniqueStrings(svc.TopicsConsumed)
+		svc.HealthAliases = uniqueStrings(svc.HealthAliases)
+		out = append(out, svc)
 	}
 
-	cfg["kafka"] = serviceKafkaBlock(key, brokers, group, produced, consumed)
-	cfg["service"] = serviceShortName(key)
-	cfg["serviceConfig"] = svc
-
-	if key == "payments-service" {
-		const paymentsPort = "8086"
-		cfg["name"] = svc.Name
-		cfg["port"] = paymentsPort
-		cfg["serverPort"] = paymentsPort
-		cfg["server_port"] = paymentsPort
-		cfg["api_base_path"] = "/api/v1"
-		cfg["stripe_currency"] = shared.EnvOrDefault("STRIPE_CURRENCY", "pen")
-	}
-
-	if key == "alert-service" {
-		alertTopic := "alert.created"
-		mailHost := shared.EnvOrDefault("MAIL_HOST", "smtp.gmail.com")
-		mailFrom := shared.EnvOrDefault("MAIL_FROM", "PENDING_CONFIGURATION")
-		cfg["kafkaAlertCreatedTopic"] = alertTopic
-		cfg["kafka_alert_created_topic"] = alertTopic
-		cfg["mailHost"] = mailHost
-		cfg["mail_host"] = mailHost
-		cfg["mailFrom"] = mailFrom
-		cfg["mail_from"] = mailFrom
-	}
-
-	if key == "energy-monitoring-service" {
-		energyBrokers := resolveEnergyKafkaBootstrap(profile)
-		kafkaSecurityProtocol := shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
-		kafkaSASLMechanism := shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE")
-		kafkaGroupID := consumerGroupFor(key)
-		if kafkaGroupID == "PENDING_CONFIGURATION" {
-			kafkaGroupID = "energy-monitoring-group"
+	sort.Slice(inconsistencies, func(i, j int) bool {
+		if inconsistencies[i].Service == inconsistencies[j].Service {
+			if inconsistencies[i].Type == inconsistencies[j].Type {
+				return inconsistencies[i].Topic < inconsistencies[j].Topic
+			}
+			return inconsistencies[i].Type < inconsistencies[j].Type
 		}
+		return inconsistencies[i].Service < inconsistencies[j].Service
+	})
 
-		cfg["app.host"] = shared.EnvOrDefault("ENERGY_MONITORING_APP_HOST", "0.0.0.0")
-		cfg["app.port"] = svc.LocalPort
-		cfg["app.env"] = normalizeLookup(profile)
-		cfg["api.base_path"] = svc.RoutePrefix
-		cfg["mongodb.database"] = shared.EnvOrDefault("MONGODB_DATABASE", "PENDING_CONFIGURATION")
-		cfg["kafka.bootstrap_servers"] = energyBrokers
-		cfg["kafka.group_id"] = kafkaGroupID
-		cfg["kafka.security_protocol"] = kafkaSecurityProtocol
-		cfg["kafka.sasl_mechanism"] = kafkaSASLMechanism
-		cfg["kafka.topics.reading_ingest"] = "monitoring.reading.ingest"
-		cfg["kafka.topics.anomaly_detected"] = "analytics.anomaly.detected"
-		cfg["kafka.topics.alert_created"] = "monitoring.alert.created"
-		cfg["kafka.topics.reading_processed"] = "monitoring.reading.processed"
-		cfg["kafka.topics.energy_reading_created"] = "energy.reading.created"
-	}
-
-	if key == "device-management-service" {
-		cfg["kafkaTopics"] = map[string]string{
-			"deviceRegistered":           "device.registered",
-			"deviceStatusUpdated":        "device.status.updated",
-			"deviceLinked":               "device.linked",
-			"deviceUnlinked":             "device.unlinked",
-			"deviceConfigurationUpdated": "device.configuration.updated",
-			"deviceEventRecorded":        "device.event.recorded",
-		}
-	}
-
-	if key == "subscriptions-service" {
-		cfg["topicSubscriptionCreated"] = "subscription.created"
-		cfg["topicSubscriptionCancelled"] = "subscription.cancelled"
-		cfg["topicSubscriptionPlanChanged"] = "subscription.plan.changed"
-		cfg["topicSubscriptionExpired"] = "subscription.expired"
-		cfg["topicSubscriptionUpdated"] = "subscription.updated"
-		cfg["kafkaTopicSubscriptionCreated"] = "subscription.created"
-		cfg["kafkaTopicSubscriptionCancelled"] = "subscription.cancelled"
-		cfg["kafkaTopicSubscriptionPlanChanged"] = "subscription.plan.changed"
-		cfg["kafkaTopicSubscriptionExpired"] = "subscription.expired"
-		cfg["kafkaTopicSubscriptionUpdated"] = "subscription.updated"
-	}
-
-	return cfg
+	return out, inconsistencies
 }
 
-func routePrefixesFor(service string) []string {
-	switch normalizeLookup(service) {
-	case "device-management-service":
-		return []string{"/api/v1/device-management"}
-	case "subscriptions-service":
-		return []string{"/api/v1/subscription-plans", "/api/v1/subscriptions", "/api/v1/webhooks"}
-	case "alert-service":
-		return []string{"/api/v1/alerts", "/api/v1/thresholds", "/api/v1/inactivity-rules", "/api/v1/notification-preferences"}
-	case "payments-service":
-		return []string{"/api/v1/payment-methods", "/api/v1/payments", "/api/v1/invoices", "/api/v1/webhooks"}
-	case "energy-monitoring-service":
-		return []string{"/api/v1/energy", "/api/v1/energy-readings", "/api/v1/energy-meters", "/api/v1/device-consumptions", "/api/v1/consumption-alerts"}
-	case "analytics-service":
-		return []string{"/api/v1/analytics"}
-	case "iam-service":
-		return []string{"/api/v1/auth", "/api/v1/users"}
-	default:
-		return []string{"/api/v1"}
-	}
-}
-
-func gatewayRouteBlocksFor(service string) []string {
-	prefixes := routePrefixesFor(service)
-	blocks := make([]string, 0, len(prefixes))
-	for _, prefix := range prefixes {
-		blocks = append(blocks, prefix+"/**")
-	}
-	return blocks
-}
-
-func firstOrDefault(values []string, fallback string) string {
-	if len(values) == 0 {
-		return fallback
-	}
-	return values[0]
-}
-
-func serviceKafkaBlock(service, brokers, group string, produced, consumed []string) map[string]any {
-	consumerTopics := consumerTopicMap(service, consumed)
-	producerTopics := producerTopicMap(service, produced)
-	block := map[string]any{
-		"brokers":           brokers,
-		"bootstrapServers":  brokers,
-		"bootstrap_servers": brokers,
-		"consumerGroup":     group,
-		"consumer_group":    group,
-		"consumerTopics":    consumerTopics,
-		"consumer_topics":   consumerTopics,
-		"producerTopics":    producerTopics,
-		"producer_topics":   producerTopics,
-		"consumedTopics":    consumed,
-		"consumed_topics":   consumed,
-		"producedTopics":    producerTopics,
-		"produced_topics":   producerTopics,
-	}
-
-	if normalizeLookup(service) == "device-management-service" {
-		block["kafkaTopics"] = map[string]string{
-			"deviceRegistered":           "device.registered",
-			"deviceStatusUpdated":        "device.status.updated",
-			"deviceLinked":               "device.linked",
-			"deviceUnlinked":             "device.unlinked",
-			"deviceConfigurationUpdated": "device.configuration.updated",
-			"deviceEventRecorded":        "device.event.recorded",
-		}
-	}
-
-	return block
-}
-
-func producedTopicMap(service string, topics []string) map[string]string {
-	out := map[string]string{}
+func filterTopics(serviceName, topicType string, topics []string, allowed map[string]struct{}, acc []model.TopicInconsistency) ([]string, []model.TopicInconsistency) {
+	valid := make([]string, 0, len(topics))
 	for _, topic := range topics {
-		out[topic] = topic
+		if topic == "" {
+			continue
+		}
+		if _, ok := allowed[topic]; !ok {
+			acc = append(acc, model.TopicInconsistency{
+				Service: serviceName,
+				Topic:   topic,
+				Type:    topicType,
+				Reason:  "topic is not in the official allowed list",
+			})
+			continue
+		}
+		valid = append(valid, topic)
 	}
+	return valid, acc
+}
 
-	switch normalizeLookup(service) {
-	case "analytics-service":
-		out["billPredictionGenerated"] = "analytics.bill_prediction.generated"
-		out["recommendationGenerated"] = "analytics.recommendation.generated"
-		out["anomalyDetected"] = "analytics.anomaly.detected"
-		out["deviceIdentified"] = "analytics.device_identified"
-		out["consumptionRankingGenerated"] = "analytics.consumption_ranking.generated"
-	case "subscriptions-service":
-		out["subscriptionCreated"] = "subscription.created"
-		out["subscriptionCancelled"] = "subscription.cancelled"
-		out["subscriptionPlanChanged"] = "subscription.plan.changed"
-		out["subscriptionExpired"] = "subscription.expired"
-		out["subscriptionUpdated"] = "subscription.updated"
+func officialTopicSet() map[string]struct{} {
+	out := make(map[string]struct{}, len(officialTopics))
+	for _, topic := range officialTopics {
+		out[topic] = struct{}{}
 	}
-
 	return out
 }
 
-func producerTopicMap(service string, topics []string) map[string]string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return map[string]string{
-			"alertCreated": "alert.created",
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
 		}
-	case "analytics-service":
-		return map[string]string{
-			"billPredictionGenerated":     "analytics.bill_prediction.generated",
-			"recommendationGenerated":     "analytics.recommendation.generated",
-			"anomalyDetected":             "analytics.anomaly.detected",
-			"deviceIdentified":            "analytics.device_identified",
-			"consumptionRankingGenerated": "analytics.consumption_ranking.generated",
+		if _, ok := seen[value]; ok {
+			continue
 		}
-	case "device-management-service":
-		return map[string]string{
-			"deviceRegistered":           "device.registered",
-			"deviceStatusUpdated":        "device.status.updated",
-			"deviceLinked":               "device.linked",
-			"deviceUnlinked":             "device.unlinked",
-			"deviceConfigurationUpdated": "device.configuration.updated",
-			"deviceEventRecorded":        "device.event.recorded",
-		}
-	case "energy-monitoring-service":
-		return map[string]string{
-			"alertCreated":         "monitoring.alert.created",
-			"readingProcessed":     "monitoring.reading.processed",
-			"energyReadingCreated": "energy.reading.created",
-		}
-	case "iam-service":
-		return map[string]string{
-			"userRegistered": "iam.user.registered",
-			"userLoggedIn":   "iam.user.logged-in",
-			"roleAssigned":   "iam.role.assigned",
-		}
-	case "payments-service":
-		return map[string]string{
-			"paymentProcessed":   "payment.processed",
-			"paymentFailed":      "payment.failed",
-			"invoiceGenerated":   "invoice.generated",
-			"paymentMethodAdded": "payment.method.added",
-		}
-	case "subscriptions-service":
-		return map[string]string{
-			"subscriptionCreated":     "subscription.created",
-			"subscriptionCancelled":   "subscription.cancelled",
-			"subscriptionPlanChanged": "subscription.plan.changed",
-			"subscriptionExpired":     "subscription.expired",
-			"subscriptionUpdated":     "subscription.updated",
-		}
-	default:
-		out := map[string]string{}
-		for _, topic := range topics {
-			out[topic] = topic
-		}
-		return out
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
+	return out
 }
 
-func consumerTopicMap(service string, topics []string) map[string]string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return map[string]string{
-			"energyReadingCreated": "energy.reading.created",
-			"anomalyDetected":      "analytics.anomaly.detected",
-		}
-	case "analytics-service":
-		return map[string]string{
-			"energyReadingCreated": "energy.reading.created",
-			"deviceRegistered":     "device.registered",
-			"deviceStatusUpdated":  "device.status.updated",
-		}
-	case "energy-monitoring-service":
-		return map[string]string{
-			"readingIngest":   "monitoring.reading.ingest",
-			"anomalyDetected": "analytics.anomaly.detected",
-		}
-	case "iam-service":
-		return map[string]string{
-			"roleAssignmentRequested": "iam.role-assignment.requested",
-		}
-	case "payments-service":
-		return map[string]string{
-			"subscriptionCreated":          "subscription.created",
-			"subscriptionCancelled":        "subscription.cancelled",
-			"subscriptionRenewalRequested": "subscription.renewal.requested",
-		}
-	default:
-		out := map[string]string{}
-		for _, topic := range topics {
-			out[topic] = topic
-		}
-		return out
-	}
-}
+func osOrEmpty(k string) string { return shared.EnvOrDefault(k, "") }
 
-func serviceShortName(service string) string {
-	switch normalizeLookup(service) {
-	case "alert-service":
-		return "alerts"
-	case "device-management-service":
-		return "device-management"
-	case "energy-monitoring-service":
-		return "energy-monitoring"
-	case "iam-service":
-		return "iam"
-	case "analytics-service":
-		return "analytics"
-	case "subscriptions-service":
-		return "subscriptions"
-	case "payments-service":
-		return "payments"
-	default:
-		return normalizeLookup(service)
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
 	}
+	return out
 }
 
 func normalizeLookup(v string) string {
@@ -563,39 +271,7 @@ func normalizeLookup(v string) string {
 	return v
 }
 
-func gatewayHealthPathFor(service string) string {
-	switch normalizeLookup(service) {
-	case "iam-service":
-		return "/health"
-	case "analytics-service":
-		return "/api/v1/analytics/health"
-	case "device-management-service":
-		return "/api/v1/device-management/health"
-	case "alert-service":
-		return "/api/v1/health"
-	case "subscriptions-service":
-		return "/api/v1/health"
-	case "payments-service":
-		return "/api/v1/health"
-	case "energy-monitoring-service":
-		return "/api/v1/health"
-	default:
-		return "/api/v1/health"
-	}
-}
-
 func resolveKafkaBootstrap(profile string) string {
-	switch normalizeProfile(profile) {
-	case "docker", "container", "compose":
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
-	case "azure", "prod", "production":
-		return shared.EnvOrDefault("KAFKA_BROKERS_AZURE", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092"))
-	default:
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
-	}
-}
-
-func resolveEnergyKafkaBootstrap(profile string) string {
 	switch normalizeProfile(profile) {
 	case "docker", "container", "compose":
 		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
@@ -624,10 +300,10 @@ func resolveServiceURL(localKey, azureKey, fallback string, azure bool) string {
 	return shared.EnvOrDefault(localKey, fallback)
 }
 
-func serviceLocalURL(services []model.ServiceConfig, name, fallback string) string {
+func serviceURL(services []model.ServiceConfig, name, fallback string) string {
 	for _, svc := range services {
-		if normalizeLookup(svc.Name) == normalizeLookup(name) && strings.TrimSpace(svc.BaseURLLocal) != "" {
-			return svc.BaseURLLocal
+		if normalizeLookup(svc.Name) == normalizeLookup(name) && strings.TrimSpace(svc.URL) != "" {
+			return svc.URL
 		}
 	}
 	return fallback

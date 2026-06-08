@@ -23,7 +23,7 @@ El servicio lee el puerto en este orden:
 
 Minimas para contenedor/local:
 - `PORT` (ejemplo: `8080`)
-- `CONFIG_SOURCE_PATH` (ejemplo: `Config`)
+- `CONFIG_SOURCE_PATH` (ejemplo: `Rutas`)
 - `ENVIRONMENT` (ejemplo: `local`, `staging`, `prod`)
 
 Variables de integracion/config centralizada:
@@ -67,7 +67,7 @@ docker build -t sems-config-service:latest .
 ```bash
 docker run --rm -p 8080:8080 \
   -e PORT=8080 \
-  -e CONFIG_SOURCE_PATH=Config \
+  -e CONFIG_SOURCE_PATH=Rutas \
   -e ENVIRONMENT=local \
   -e KAFKA_BROKERS=host.docker.internal:9092 \
   -e KAFKA_BOOTSTRAP_SERVERS_LOCAL=host.docker.internal:9092 \
@@ -80,7 +80,7 @@ docker run --rm -p 8080:8080 \
 
 Definir en la Container App:
 - `PORT=8080`
-- `CONFIG_SOURCE_PATH=Config`
+- `CONFIG_SOURCE_PATH=Rutas`
 - `ENVIRONMENT=prod`
 - `CONFIG_SERVICE_URL` (si aplica para clientes)
 - `KAFKA_BROKERS=<broker-azure:9092>`
@@ -97,3 +97,8 @@ Configurar health probe en:
 ## Seguridad
 
 No exponer ni versionar secretos reales (`DATABASE_URL`, passwords, tokens, credenciales Kafka). Usar secretos de Azure Container Apps y/o Azure Key Vault.
+
+## Fuente de configuracion
+
+La fuente oficial que consume este servicio es la carpeta `Rutas/`.
+La carpeta `Config/` ya no forma parte del flujo operativo.

@@ -1,0 +1,119 @@
+# Inventario técnico - Device Management Service
+
+Valores auditados solo desde este repositorio local. El micro intenta sobreescribir configuración vía `CONFIG_SERVICE_URL`, pero ese contenido remoto no fue auditado.
+
+## 1. Identificación
+- Servicio: `device-management-service`
+- Lenguaje/framework: Go, Gin, GORM, `segmentio/kafka-go`
+- Archivo principal: `main.go`
+- Archivos de rutas/controladores: `device-management/interfaces/rest/router.go`, `device-management/interfaces/rest/controllers/device_controller.go`, `device-management/interfaces/rest/controllers/binding_controller.go`, `device-management/interfaces/rest/controllers/configuration_controller.go`, `device-management/interfaces/rest/controllers/event_controller.go`, `device-management/interfaces/rest/controllers/health_controller.go`
+- Archivos de configuración: `main.go`, `device-management/infrastructure/configuration/config.go`, `device-management/infrastructure/http/cors.go`, `.env`, `.env.example`, `Dockerfile`, `docker-compose.yml`
+
+## 2. HTTP / Red
+- Puerto real: `8083` (`.env` actual y `docker-compose.yml`)
+- Puerto por defecto: `8083` en código (`config.go`); `8080` en `Dockerfile` y `.env.example`
+- Variable de puerto: `PORT`
+- Host: No encontrado
+- Prefix/base path: `/api/v1/device-management` para API; `/api/v1` también existe para health genérico
+- Health endpoints: `GET /api/v1/health`, `GET /api/v1/device-management/health`
+- CORS: Sí; `CORS_ALLOWED_ORIGINS` + `API_GATEWAY_ALLOWED_ORIGIN`, métodos `GET, POST, PUT, PATCH, DELETE, OPTIONS`, `AllowCredentials=true`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/api/v1/health` | `Health` | `device-management/interfaces/rest/router.go` + `device-management/interfaces/rest/controllers/health_controller.go` |
+| GET | `/api/v1/device-management/health` | `Health` | `device-management/interfaces/rest/router.go` + `device-management/interfaces/rest/controllers/health_controller.go` |
+| POST | `/api/v1/device-management/devices` | `DeviceController.CreateDevice` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| GET | `/api/v1/device-management/devices` | `DeviceController.GetDevices` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| GET | `/api/v1/device-management/devices/:deviceId` | `DeviceController.GetDeviceByID` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| GET | `/api/v1/device-management/users/:userId/devices` | `DeviceController.GetDevicesByUserID` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| PUT | `/api/v1/device-management/devices/:deviceId` | `DeviceController.UpdateDevice` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| PATCH | `/api/v1/device-management/devices/:deviceId/status` | `DeviceController.UpdateDeviceStatus` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| DELETE | `/api/v1/device-management/devices/:deviceId` | `DeviceController.DeleteDevice` | `device-management/interfaces/rest/controllers/device_controller.go` |
+| POST | `/api/v1/device-management/devices/:deviceId/bindings` | `BindingController.CreateBinding` | `device-management/interfaces/rest/controllers/binding_controller.go` |
+| GET | `/api/v1/device-management/devices/:deviceId/bindings` | `BindingController.GetBindingsByDeviceID` | `device-management/interfaces/rest/controllers/binding_controller.go` |
+| GET | `/api/v1/device-management/users/:userId/bindings` | `BindingController.GetBindingsByUserID` | `device-management/interfaces/rest/controllers/binding_controller.go` |
+| PATCH | `/api/v1/device-management/bindings/:bindingId/unlink` | `BindingController.UnlinkBinding` | `device-management/interfaces/rest/controllers/binding_controller.go` |
+| POST | `/api/v1/device-management/devices/:deviceId/configurations` | `ConfigurationController.CreateConfiguration` | `device-management/interfaces/rest/controllers/configuration_controller.go` |
+| GET | `/api/v1/device-management/devices/:deviceId/configurations` | `ConfigurationController.GetConfigurationsByDeviceID` | `device-management/interfaces/rest/controllers/configuration_controller.go` |
+| PUT | `/api/v1/device-management/configurations/:configurationId` | `ConfigurationController.UpdateConfiguration` | `device-management/interfaces/rest/controllers/configuration_controller.go` |
+| POST | `/api/v1/device-management/devices/:deviceId/events` | `EventController.RecordEvent` | `device-management/interfaces/rest/controllers/event_controller.go` |
+| GET | `/api/v1/device-management/devices/:deviceId/events` | `EventController.GetEventsByDeviceID` | `device-management/interfaces/rest/controllers/event_controller.go` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `TOPIC_DEVICE_REGISTERED` | `device.registered` | `DEVICE_REGISTERED` al crear dispositivo | `device-management/application/commandservices/device_command_service.go` | `RegisterDevice` |
+| `TOPIC_DEVICE_STATUS_UPDATED` | `device.status.updated` | `DEVICE_STATUS_UPDATED` al cambiar estado | `device-management/application/commandservices/device_command_service.go` | `UpdateDeviceStatus` |
+| `TOPIC_DEVICE_STATUS_UPDATED` | `device.status.updated` | `DEVICE_STATUS_UPDATED` al eliminar lógicamente dispositivo | `device-management/application/commandservices/device_command_service.go` | `DeleteDevice` |
+| `TOPIC_DEVICE_LINKED` | `device.linked` | `DEVICE_LINKED` al vincular dispositivo | `device-management/application/commandservices/device_binding_command_service.go` | `CreateBinding` |
+| `TOPIC_DEVICE_UNLINKED` | `device.unlinked` | `DEVICE_UNLINKED` al desvincular binding | `device-management/application/commandservices/device_binding_command_service.go` | `UnlinkBinding` |
+| `TOPIC_DEVICE_CONFIGURATION_UPDATED` | `device.configuration.updated` | `DEVICE_CONFIGURATION_UPDATED` al crear configuración | `device-management/application/commandservices/device_configuration_command_service.go` | `CreateConfiguration` |
+| `TOPIC_DEVICE_CONFIGURATION_UPDATED` | `device.configuration.updated` | `DEVICE_CONFIGURATION_UPDATED` al actualizar configuración | `device-management/application/commandservices/device_configuration_command_service.go` | `UpdateConfiguration` |
+| `TOPIC_DEVICE_EVENT_RECORDED` | `device.event.recorded` | `DEVICE_EVENT_RECORDED` al registrar evento del dispositivo | `device-management/application/commandservices/device_event_command_service.go` | `RecordEvent` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| No encontrado | No encontrado | No encontrado | No encontrado | No encontrado |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `.env=localhost:9092`; default código=`localhost:9092`; en Docker app=`${KAFKA_BROKERS_DOCKER:-kafka:9092}` | `.env`, `.env.example`, `device-management/infrastructure/configuration/config.go`, `docker-compose.yml` |
+| `KAFKA_BOOTSTRAP_SERVERS` | No encontrado | No encontrado |
+| `KAFKA_BOOTSTRAP_SERVER` | `kafka:9092` | `docker-compose.yml`, `scripts/create-topics.sh` |
+| `KAFKA_CONSUMER_GROUP` | `.env=device-management-group`; default código=`device-management-group` | `.env`, `.env.example`, `device-management/infrastructure/configuration/config.go` |
+| `KAFKA_GROUP_ID` | No encontrado | No encontrado |
+| `KAFKA_CLIENT_ID` | `.env=device-management-service`; default código=`device-management-service` | `.env`, `.env.example`, `device-management/infrastructure/configuration/config.go` |
+| `KAFKA_ENABLED` | `.env=true`; default código=`false`; `.env.example=false` | `.env`, `.env.example`, `device-management/infrastructure/configuration/config.go` |
+| `KAFKA_WRITE_TIMEOUT_MS` | `.env=2000`; default código=`2000` | `.env`, `.env.example`, `device-management/infrastructure/configuration/config.go` |
+| `KAFKA_TOPICS` | `.env` No encontrado; `.env.example=device.registered,device.status.updated,device.linked,device.unlinked,device.configuration.updated,device.event.recorded`; fallback igual en Docker init | `.env.example`, `docker-compose.yml`, `scripts/create-topics.sh` |
+| `KAFKA_SECURITY_PROTOCOL` | Vacío; no leído por código | `.env.example` |
+| `KAFKA_SASL_MECHANISM` | Vacío; no leído por código | `.env.example` |
+| `KAFKA_USERNAME` | Vacío; no leído por código | `.env.example` |
+| `KAFKA_PASSWORD` | Vacío; no leído por código | `.env.example` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `device-management-service` |
+| Puerto | `8083` |
+| Base URL local sugerida | `http://localhost:8083/api/v1/device-management` |
+| Prefix | `/api/v1/device-management` |
+| Health | `/api/v1/device-management/health` |
+| Rutas principales | `/devices`, `/users/:userId/devices`, `/devices/:deviceId/bindings`, `/users/:userId/bindings`, `/devices/:deviceId/configurations`, `/configurations/:configurationId`, `/devices/:deviceId/events` |
+| Topics publica | `device.registered`, `device.status.updated`, `device.linked`, `device.unlinked`, `device.configuration.updated`, `device.event.recorded` |
+| Topics consume | No encontrado |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente entre fuentes: código por defecto `8083`, `.env` actual `8083`, `docker-compose.yml` usa `8083`, pero `Dockerfile` y `.env.example` usan `8080`.
+- Health check inconsistente entre fuentes: `Dockerfile` usa `/api/v1/health`; `docker-compose.yml` y `KEEP_ALIVE_PATH` usan `/api/v1/device-management/health`. Ambos existen en código, pero no están unificados.
+- En `.env` actual no existen variables `TOPIC_*`; el runtime local cae en los defaults de `config.go`.
+- `KAFKA_CONSUMER_GROUP` existe y se carga en `RuntimeConfig`, pero no se usa porque no hay ningún `NewConsumer(...)` ni `Start(...)` conectado en `main.go`.
+- Existe infraestructura de consumo Kafka en `device-management/infrastructure/messaging/kafka/consumer.go`, pero no hay consumers reales registrados ni handlers conectados al arranque.
+- `KAFKA_TOPICS` no es usado por el código de la app; solo por `docker-compose.yml` y `scripts/create-topics.sh` para bootstrap.
+- `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_USERNAME`, `KAFKA_PASSWORD` existen en `.env.example`, pero no son leídos por este código.
+- No se encontraron topics hardcodeados en conflicto con los defaults declarados.
+- No se encontraron topics duplicados efectivos; `topic_admin.go` además deduplica la lista antes de crear topics.
+- No se encontraron endpoints definidos fuera del router principal.
+- No se encontraron handlers HTTP creados pero no conectados.
+- No se encontraron publishers definidos y totalmente huérfanos; `Producer` y `NoopPublisher` sí están contemplados por `main.go`.
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+- `SERVICE_URL` recomendado: `http://localhost:8083`
+- Path predicates recomendados: `/api/v1/device-management/**`
+- Health path recomendado: `/api/v1/device-management/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+- Nombre del servicio: `device-management-service`
+- URL local: `http://localhost:8083`
+- Puerto: `8083`
+- Prefix: `/api/v1/device-management`
+- Health endpoint: `/api/v1/device-management/health`
+- Topics que publica: `device.registered`, `device.status.updated`, `device.linked`, `device.unlinked`, `device.configuration.updated`, `device.event.recorded`
+- Topics que consume: No encontrado

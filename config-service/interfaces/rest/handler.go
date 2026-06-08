@@ -2,12 +2,10 @@ package rest
 
 import (
 	"net/http"
-	"sort"
 	"strings"
 
 	"config-service/config-service/application/services"
 	httpx "config-service/config-service/infrastructure/http"
-	"config-service/shared"
 )
 
 type Handler struct {
@@ -42,21 +40,13 @@ func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
-	payload := map[string]any{}
-	for key, value := range h.service.ServiceEndpoints(profile) {
-		payload[key] = value
-	}
-	payload["services"] = h.service.GetAllServices()
-	payload["services_map"] = h.service.GetAllServicesMap(profile)
 
-	httpx.WriteJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"count":           len(h.service.GetAllServices()),
+		"services":        h.service.GetAllServices(),
+		"serviceUrls":     h.service.ServiceEndpoints(profileFromRequest(r)),
+		"inconsistencies": h.service.GetInconsistencies(),
+	})
 }
 
 func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
@@ -64,19 +54,14 @@ func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
 	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/config/services/"))
 	if name == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "service name is required")
 		return
 	}
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
-	service, err := h.service.GetServiceCompatibilityConfig(name, profile)
+
+	service, err := h.service.GetServiceByName(name)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
 		return
@@ -102,20 +87,12 @@ func (h *Handler) configByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
-
-	payload, err := h.service.GetServiceCompatibilityConfig(name, profile)
+	service, err := h.service.GetServiceByName(name)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, service)
 }
 
 func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
@@ -123,70 +100,7 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
-	cfg := h.service.KafkaConfig(profile)
-	brokers := splitCSV(cfg.BootstrapServers)
-	servicesMap := h.service.GetAllServicesMap(profile)
-	officialTopics := map[string]any{}
-	allTopicNames := map[string]struct{}{}
-	for serviceName, serviceCfg := range servicesMap {
-		shortName := serviceCfg["service"]
-		if shortName == nil {
-			shortName = serviceName
-		}
-		officialTopics[shortName.(string)] = serviceCfg["kafka"]
-		kafkaCfg, _ := serviceCfg["kafka"].(map[string]any)
-		for _, key := range []string{"consumerTopics", "producerTopics"} {
-			topicMap, _ := kafkaCfg[key].(map[string]string)
-			for _, topicName := range topicMap {
-				allTopicNames[topicName] = struct{}{}
-			}
-		}
-	}
-	flatTopics := make([]string, 0, len(allTopicNames))
-	for topicName := range allTopicNames {
-		flatTopics = append(flatTopics, topicName)
-	}
-	sort.Strings(flatTopics)
-	saslUsername := shared.EnvOrDefault("KAFKA_USERNAME", shared.EnvOrDefault("KAFKA_SASL_USERNAME", ""))
-	saslPassword := shared.EnvOrDefault("KAFKA_PASSWORD", shared.EnvOrDefault("KAFKA_SASL_PASSWORD", ""))
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"kafkaBrokers":       cfg.BootstrapServers,
-		"brokers":            cfg.BootstrapServers,
-		"securityProtocol":   cfg.SecurityProtocol,
-		"saslMechanism":      cfg.SASLMechanism,
-		"saslUsername":       saslUsername,
-		"saslPassword":       saslPassword,
-		"bootstrapServers":   cfg.BootstrapServers,
-		"bootstrap_servers":  brokers,
-		"client_id":          "config-service",
-		"security_protocol":  cfg.SecurityProtocol,
-		"sasl_mechanism":     cfg.SASLMechanism,
-		"officialTopics":     officialTopics,
-		"officialTopicNames": flatTopics,
-		"services":           officialTopics,
-		"topics": map[string]string{
-			"payment_processed":              "payment.processed",
-			"payment_failed":                 "payment.failed",
-			"invoice_generated":              "invoice.generated",
-			"payment_method_added":           "payment.method.added",
-			"subscription_created":           "subscription.created",
-			"subscription_renewal_requested": "subscription.renewal.requested",
-			"subscription_cancelled":         "subscription.cancelled",
-		},
-		"producedTopics":  cfg.ProducedTopics,
-		"consumedTopics":  cfg.ConsumedTopics,
-		"consumerGroups":  cfg.ConsumerGroups,
-		"produced_topics": cfg.ProducedTopics,
-		"consumed_topics": cfg.ConsumedTopics,
-		"consumer_groups": cfg.ConsumerGroups,
-	})
+	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig(profileFromRequest(r)))
 }
 
 func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
@@ -194,19 +108,13 @@ func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, h.service.GatewayConfig())
-}
 
-func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"gateway":         h.service.GatewayConfig(),
+		"serviceUrls":     h.service.ServiceEndpoints(profileFromRequest(r)),
+		"services":        h.service.GetAllServices(),
+		"inconsistencies": h.service.GetInconsistencies(),
+	})
 }
 
 func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +122,7 @@ func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/config/runtime/")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
@@ -227,4 +136,15 @@ func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func profileFromRequest(r *http.Request) string {
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
+	return profile
 }

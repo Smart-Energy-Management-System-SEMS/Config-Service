@@ -12,7 +12,7 @@ import (
 
 func main() {
 	port := shared.EnvOrDefault("PORT", shared.EnvOrDefault("CONFIG_SERVICE_PORT", "8090"))
-	sourcePath := shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Config")
+	sourcePath := shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Rutas")
 
 	loader := configuration.NewLoader(sourcePath)
 	configService, err := services.NewConfigService(loader)
