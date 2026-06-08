@@ -38,6 +38,9 @@
 - `KAFKA_GROUP_ID`
 - `KAFKA_CONSUMPTION_TOPIC`
 - `KAFKA_TOPIC_DEVICE_READING_CREATED`
+- `KAFKA_TOPIC_ENERGY_CONSUMPTION_RECORDED`
+- `KAFKA_TOPIC_ENERGY_READING_CREATED`
+- `KAFKA_TOPIC_ANALYTICS_ANOMALY_DETECTED`
 - `MAIL_HOST`
 - `MAIL_PORT`
 - `MAIL_USERNAME`
@@ -60,7 +63,8 @@
 - bootstrap servers: `KAFKA_BROKERS`
 - security protocol: `PLAINTEXT` en local/docker
 - topics que consume:
-  - `energy.consumption.recorded`
+  - `energy.reading.created`
+  - `analytics.anomaly.detected`
 - consumer group: `alert-service-group`
 
 11. Servicios externos que usa:

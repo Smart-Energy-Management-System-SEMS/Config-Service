@@ -57,7 +57,7 @@
   - `analytics.device_identified`
   - `analytics.consumption_ranking.generated`
 - topics que consume:
-  - `energy.consumption.recorded`
+  - `energy.reading.created`
   - `device.registered`
   - `device.updated`
 - consumer group: `analytics-service-group`

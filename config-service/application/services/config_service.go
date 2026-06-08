@@ -164,7 +164,7 @@ func producedTopicsFor(service string) []string {
 	case "device-management-service":
 		return []string{"device.configuration.updated", "device.event.recorded", "device.linked", "device.registered", "device.status.updated", "device.unlinked"}
 	case "energy-monitoring-service":
-		return []string{"energy.consumption.recorded", "energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
+		return []string{"energy.reading.created", "monitoring.alert.created", "monitoring.reading.processed"}
 	case "iam-service":
 		return []string{"iam.role.assigned", "iam.user.logged-in", "iam.user.registered"}
 	case "payments-service":
@@ -179,9 +179,9 @@ func producedTopicsFor(service string) []string {
 func consumedTopicsFor(service string) []string {
 	switch normalizeLookup(service) {
 	case "alert-service":
-		return []string{"energy.consumption.recorded"}
+		return []string{"analytics.anomaly.detected", "energy.reading.created"}
 	case "analytics-service":
-		return []string{"device.registered", "device.status.updated", "energy.consumption.recorded"}
+		return []string{"device.registered", "device.status.updated", "energy.reading.created"}
 	case "energy-monitoring-service":
 		return []string{"analytics.anomaly.detected", "monitoring.reading.ingest"}
 	case "iam-service":
@@ -245,23 +245,25 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 	consumptionTopic := firstOrDefault(consumed, "PENDING_CONFIGURATION")
 
 	cfg := map[string]any{
-		"serviceName":             svc.Name,
-		"service_name":            svc.Name,
-		"serverPort":              svc.LocalPort,
-		"server_port":             svc.LocalPort,
-		"base_url_local":          svc.BaseURLLocal,
-		"route_prefix":            svc.RoutePrefix,
-		"routePrefixes":           strings.Join(routePrefixesFor(key), ","),
-		"route_prefixes":          strings.Join(routePrefixesFor(key), ","),
-		"gatewayRouteBlocks":      strings.Join(gatewayRouteBlocksFor(key), ","),
-		"gateway_route_blocks":    strings.Join(gatewayRouteBlocksFor(key), ","),
-		"gateway_health_path":     gatewayHealthPathFor(key),
-		"kafkaConsumerGroup":      group,
-		"kafka_consumer_group":    group,
-		"kafkaConsumptionTopic":   consumptionTopic,
-		"kafka_consumption_topic": consumptionTopic,
-		"kafkaBrokers":            brokers,
-		"kafka_brokers":           brokers,
+		"serviceName":              svc.Name,
+		"service_name":             svc.Name,
+		"serverPort":               svc.LocalPort,
+		"server_port":              svc.LocalPort,
+		"base_url_local":           svc.BaseURLLocal,
+		"route_prefix":             svc.RoutePrefix,
+		"routePrefixes":            strings.Join(routePrefixesFor(key), ","),
+		"route_prefixes":           strings.Join(routePrefixesFor(key), ","),
+		"gatewayRouteBlocks":       strings.Join(gatewayRouteBlocksFor(key), ","),
+		"gateway_route_blocks":     strings.Join(gatewayRouteBlocksFor(key), ","),
+		"gateway_health_path":      gatewayHealthPathFor(key),
+		"kafkaConsumerGroup":       group,
+		"kafka_consumer_group":     group,
+		"kafkaConsumptionTopic":    consumptionTopic,
+		"kafka_consumption_topic":  consumptionTopic,
+		"kafkaConsumptionTopics":   consumed,
+		"kafka_consumption_topics": consumed,
+		"kafkaBrokers":             brokers,
+		"kafka_brokers":            brokers,
 	}
 
 	cfg["kafka"] = serviceKafkaBlock(key, brokers, group, produced, consumed)
@@ -310,7 +312,6 @@ func (s *ConfigService) compatibilityConfigFor(name string, svc model.ServiceCon
 		cfg["kafka.sasl_mechanism"] = kafkaSASLMechanism
 		cfg["kafka.topics.reading_ingest"] = "monitoring.reading.ingest"
 		cfg["kafka.topics.anomaly_detected"] = "analytics.anomaly.detected"
-		cfg["kafka.topics.energy_consumption_recorded"] = "energy.consumption.recorded"
 		cfg["kafka.topics.alert_created"] = "monitoring.alert.created"
 		cfg["kafka.topics.reading_processed"] = "monitoring.reading.processed"
 		cfg["kafka.topics.energy_reading_created"] = "energy.reading.created"
@@ -462,10 +463,9 @@ func producerTopicMap(service string, topics []string) map[string]string {
 		}
 	case "energy-monitoring-service":
 		return map[string]string{
-			"energyConsumptionRecorded": "energy.consumption.recorded",
-			"alertCreated":              "monitoring.alert.created",
-			"readingProcessed":          "monitoring.reading.processed",
-			"energyReadingCreated":      "energy.reading.created",
+			"alertCreated":         "monitoring.alert.created",
+			"readingProcessed":     "monitoring.reading.processed",
+			"energyReadingCreated": "energy.reading.created",
 		}
 	case "iam-service":
 		return map[string]string{
@@ -501,13 +501,14 @@ func consumerTopicMap(service string, topics []string) map[string]string {
 	switch normalizeLookup(service) {
 	case "alert-service":
 		return map[string]string{
-			"energyConsumptionRecorded": "energy.consumption.recorded",
+			"energyReadingCreated": "energy.reading.created",
+			"anomalyDetected":      "analytics.anomaly.detected",
 		}
 	case "analytics-service":
 		return map[string]string{
-			"energyConsumptionRecorded": "energy.consumption.recorded",
-			"deviceRegistered":          "device.registered",
-			"deviceStatusUpdated":       "device.status.updated",
+			"energyReadingCreated": "energy.reading.created",
+			"deviceRegistered":     "device.registered",
+			"deviceStatusUpdated":  "device.status.updated",
 		}
 	case "energy-monitoring-service":
 		return map[string]string{
