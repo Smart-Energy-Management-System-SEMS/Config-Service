@@ -96,7 +96,7 @@ func (s *ConfigService) GetInconsistencies() []model.TopicInconsistency {
 func (s *ConfigService) GatewayConfig() model.GatewayConfig {
 	return model.GatewayConfig{
 		Port:               osOrEmpty("API_GATEWAY_PORT"),
-		BaseURLLocal:       shared.EnvOrDefault("API_GATEWAY_URL", "http://localhost:8081"),
+		BaseURLLocal:       getEnv("API_GATEWAY_URL", "http://localhost:8081"),
 		BaseURLDeploy:      osOrEmpty("API_GATEWAY_BASE_URL_DEPLOY"),
 		CORSAllowedOrigins: osOrEmpty("API_GATEWAY_CORS_ALLOWED_ORIGINS"),
 		AuthRequired:       osOrEmpty("API_GATEWAY_AUTH_REQUIRED"),
@@ -116,8 +116,12 @@ func (s *ConfigService) KafkaConfig(profile string) model.KafkaConfig {
 	return model.KafkaConfig{
 		BootstrapServers: resolveKafkaBootstrap(profile),
 		Brokers:          splitCSV(resolveKafkaBootstrap(profile)),
-		SecurityProtocol: shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
-		SASLMechanism:    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", ""),
+		SecurityProtocol: getEnv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
+		SASLMechanism:    getEnv("KAFKA_SASL_MECHANISM", ""),
+		Username:         getEnv("KAFKA_USERNAME", ""),
+		Password:         getEnv("KAFKA_PASSWORD", ""),
+		ClientID:         getEnv("KAFKA_CLIENT_ID", ""),
+		ConsumerGroup:    getEnv("KAFKA_CONSUMER_GROUP", ""),
 		OfficialTopics:   append([]string{}, officialTopics...),
 		ProducedTopics:   produced,
 		ConsumedTopics:   consumed,
@@ -130,14 +134,14 @@ func (s *ConfigService) ServiceEndpoints(profile string) map[string]string {
 	azure := profile == "azure"
 
 	return map[string]string{
-		"apiGatewayUrl":              resolveServiceURL("API_GATEWAY_URL", "API_GATEWAY_URL_AZURE", "http://localhost:8081", azure),
-		"iamServiceUrl":              resolveServiceURL("IAM_SERVICE_URL", "IAM_SERVICE_URL_AZURE", serviceURL(s.services, "iam-service", "http://localhost:8082"), azure),
-		"deviceManagementServiceUrl": resolveServiceURL("DEVICE_MANAGEMENT_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", serviceURL(s.services, "device-management-service", "http://localhost:8083"), azure),
-		"subscriptionsServiceUrl":    resolveServiceURL("SUBSCRIPTIONS_SERVICE_URL", "SUBSCRIPTIONS_SERVICE_URL_AZURE", serviceURL(s.services, "subscriptions-service", "http://localhost:18083"), azure),
-		"paymentsServiceUrl":         resolveServiceURL("PAYMENTS_SERVICE_URL", "PAYMENTS_SERVICE_URL_AZURE", serviceURL(s.services, "payments-service", "http://localhost:8086"), azure),
-		"alertServiceUrl":            resolveServiceURL("ALERT_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", serviceURL(s.services, "alert-service", "http://localhost:8085"), azure),
-		"analyticsServiceUrl":        resolveServiceURL("ANALYTICS_SERVICE_URL", "ANALYTICS_SERVICE_URL_AZURE", serviceURL(s.services, "analytics-service", "http://localhost:8004"), azure),
-		"energyMonitoringServiceUrl": resolveServiceURL("ENERGY_MONITORING_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", serviceURL(s.services, "energy-monitoring-service", "http://localhost:8001"), azure),
+		"apiGatewayUrl":              resolveServiceURL(azure, "http://localhost:8081", "API_GATEWAY_URL_AZURE", "API_GATEWAY_URL"),
+		"iamServiceUrl":              resolveServiceURL(azure, serviceURL(s.services, "iam-service", "http://localhost:8082"), "IAM_SERVICE_URL_AZURE", "IAM_SERVICE_URL"),
+		"deviceManagementServiceUrl": resolveServiceURL(azure, serviceURL(s.services, "device-management-service", "http://localhost:8083"), "DEVICE_SERVICE_URL_AZURE", "DEVICE_SERVICE_URL", "DEVICE_MANAGEMENT_SERVICE_URL_AZURE", "DEVICE_MANAGEMENT_SERVICE_URL"),
+		"subscriptionsServiceUrl":    resolveServiceURL(azure, serviceURL(s.services, "subscriptions-service", "http://localhost:18083"), "SUBSCRIPTIONS_SERVICE_URL_AZURE", "SUBSCRIPTIONS_SERVICE_URL"),
+		"paymentsServiceUrl":         resolveServiceURL(azure, serviceURL(s.services, "payments-service", "http://localhost:8086"), "PAYMENTS_SERVICE_URL_AZURE", "PAYMENTS_SERVICE_URL"),
+		"alertServiceUrl":            resolveServiceURL(azure, serviceURL(s.services, "alert-service", "http://localhost:8085"), "ALERTS_SERVICE_URL_AZURE", "ALERTS_SERVICE_URL", "ALERT_SERVICE_URL_AZURE", "ALERT_SERVICE_URL"),
+		"analyticsServiceUrl":        resolveServiceURL(azure, serviceURL(s.services, "analytics-service", "http://localhost:8004"), "ANALYTICS_SERVICE_URL_AZURE", "ANALYTICS_SERVICE_URL"),
+		"energyMonitoringServiceUrl": resolveServiceURL(azure, serviceURL(s.services, "energy-monitoring-service", "http://localhost:8001"), "ENERGY_SERVICE_URL_AZURE", "ENERGY_SERVICE_URL", "ENERGY_MONITORING_SERVICE_URL_AZURE", "ENERGY_MONITORING_SERVICE_URL"),
 		"kafkaBrokers":               resolveKafkaBootstrap(profile),
 	}
 }
@@ -152,11 +156,16 @@ func (s *ConfigService) GetRuntimeConfig(serviceName, profile string) (model.Run
 	}
 
 	common := map[string]string{
-		"ENVIRONMENT":             shared.EnvOrDefault("ENVIRONMENT", "local"),
+		"ENVIRONMENT":             getEnv("ENVIRONMENT", "local"),
 		"KAFKA_BOOTSTRAP_SERVERS": resolveKafkaBootstrap(profile),
-		"KAFKA_SECURITY_PROTOCOL": shared.EnvOrDefault("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
-		"KAFKA_SASL_MECHANISM":    shared.EnvOrDefault("KAFKA_SASL_MECHANISM", "NONE"),
-		"CONFIG_SOURCE_PATH":      shared.EnvOrDefault("CONFIG_SOURCE_PATH", "Rutas"),
+		"KAFKA_BROKERS":           resolveKafkaBootstrap(profile),
+		"KAFKA_SECURITY_PROTOCOL": getEnv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
+		"KAFKA_SASL_MECHANISM":    getEnv("KAFKA_SASL_MECHANISM", "NONE"),
+		"KAFKA_USERNAME":          getEnv("KAFKA_USERNAME", ""),
+		"KAFKA_PASSWORD":          getEnv("KAFKA_PASSWORD", ""),
+		"KAFKA_CLIENT_ID":         getEnv("KAFKA_CLIENT_ID", ""),
+		"KAFKA_CONSUMER_GROUP":    getEnv("KAFKA_CONSUMER_GROUP", ""),
+		"CONFIG_SOURCE_PATH":      getEnv("CONFIG_SOURCE_PATH", "Rutas"),
 	}
 
 	return model.RuntimeConfigResponse{
@@ -251,6 +260,8 @@ func uniqueStrings(values []string) []string {
 
 func osOrEmpty(k string) string { return shared.EnvOrDefault(k, "") }
 
+func getEnv(key, fallback string) string { return shared.EnvOrDefault(key, fallback) }
+
 func splitCSV(value string) []string {
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))
@@ -274,11 +285,11 @@ func normalizeLookup(v string) string {
 func resolveKafkaBootstrap(profile string) string {
 	switch normalizeProfile(profile) {
 	case "docker", "container", "compose":
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_DOCKER", shared.EnvOrDefault("KAFKA_BROKERS", "kafka:9092"))
+		return getEnv("KAFKA_BOOTSTRAP_SERVERS_DOCKER", getEnv("KAFKA_BROKERS", "localhost:9092"))
 	case "azure", "prod", "production":
-		return shared.EnvOrDefault("KAFKA_BROKERS_AZURE", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092"))
+		return getEnv("KAFKA_BROKERS_AZURE", getEnv("KAFKA_BROKERS", "localhost:9092"))
 	default:
-		return shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS_LOCAL", shared.EnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", shared.EnvOrDefault("KAFKA_BROKERS", "localhost:9092")))
+		return getEnv("KAFKA_BOOTSTRAP_SERVERS_LOCAL", getEnv("KAFKA_BOOTSTRAP_SERVERS", getEnv("KAFKA_BROKERS", "localhost:9092")))
 	}
 }
 
@@ -293,11 +304,19 @@ func normalizeProfile(profile string) string {
 	return p
 }
 
-func resolveServiceURL(localKey, azureKey, fallback string, azure bool) string {
-	if azure {
-		return shared.EnvOrDefault(azureKey, shared.EnvOrDefault(localKey, fallback))
+func resolveServiceURL(azure bool, fallback string, keys ...string) string {
+	value := fallback
+	for i := len(keys) - 1; i >= 0; i-- {
+		key := strings.TrimSpace(keys[i])
+		if key == "" {
+			continue
+		}
+		if strings.HasSuffix(key, "_AZURE") && !azure {
+			continue
+		}
+		value = getEnv(key, value)
 	}
-	return shared.EnvOrDefault(localKey, fallback)
+	return value
 }
 
 func serviceURL(services []model.ServiceConfig, name, fallback string) string {

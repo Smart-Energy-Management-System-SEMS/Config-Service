@@ -36,6 +36,10 @@ type KafkaConfig struct {
 	Brokers          []string             `json:"brokers"`
 	SecurityProtocol string               `json:"securityProtocol"`
 	SASLMechanism    string               `json:"saslMechanism"`
+	Username         string               `json:"username"`
+	Password         string               `json:"password"`
+	ClientID         string               `json:"clientId"`
+	ConsumerGroup    string               `json:"consumerGroup"`
 	OfficialTopics   []string             `json:"officialTopics"`
 	ProducedTopics   map[string][]string  `json:"producedTopics"`
 	ConsumedTopics   map[string][]string  `json:"consumedTopics"`
