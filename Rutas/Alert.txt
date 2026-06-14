@@ -102,12 +102,12 @@ Dame solo:
 
 ## 10. Resumen para copiar al Config Service
 Dame solo:
-- Nombre del servicio: `alert-service`
+- Nombre del servicio: `alerts-service`
 - URL local: `http://localhost:8085`
 - Puerto: `8085`
 - Prefix: `/api/v1`
 - Health endpoint: `/api/v1/health`
-- Topics que publica: `alert.created`
-- Topics que consume: `energy.reading.created`, `analytics.anomaly.detected`, `energy.consumption.recorded`
+- Topics que publica: `alerts.events`
+- Topics que consume: `energy.events`, `analytics.events`
 
 Si quieres, en el siguiente paso puedo convertir este inventario directamente en bloques listos para pegar en tu API Gateway y en tu Config Service, sin auditar ningún otro repo.

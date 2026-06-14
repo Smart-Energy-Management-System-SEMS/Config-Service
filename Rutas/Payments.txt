@@ -117,7 +117,7 @@ Dame solo:
 - Puerto: `8086`
 - Prefix: `/api/v1`
 - Health endpoint: `/api/v1/health`
-- Topics que publica: `payment.processed`, `payment.failed`, `invoice.generated`, `payment.method.added`
-- Topics que consume: `subscription.created`, `subscription.renewal.requested`, `subscription.cancelled`
+- Topics que publica: `payments.events`
+- Topics que consume: `billing.events`, `subscriptions.events`
 
 Si quieres, en el siguiente paso puedo convertir este inventario en un bloque listo para pegar en tu API Gateway o en tu Config Service, pero sin analizarlos todavía.

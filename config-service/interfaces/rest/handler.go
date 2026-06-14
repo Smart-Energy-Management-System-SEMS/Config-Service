@@ -17,10 +17,12 @@ func NewHandler(service *services.ConfigService) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/health", h.health)
 	mux.HandleFunc("/api/v1/health", h.health)
 	mux.HandleFunc("/api/v1/config/health", h.health)
 	mux.HandleFunc("/api/v1/config/services", h.services)
 	mux.HandleFunc("/api/v1/config/services/", h.serviceByName)
+	mux.HandleFunc("/api/v1/config/topics", h.topics)
 	mux.HandleFunc("/api/v1/config/", h.configByName)
 	mux.HandleFunc("/api/v1/config/runtime/", h.runtimeConfig)
 	mux.HandleFunc("/api/v1/config/kafka", h.kafka)
@@ -82,7 +84,7 @@ func (h *Handler) configByName(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch name {
-	case "health", "services", "kafka", "api-gateway", "runtime":
+	case "health", "services", "kafka", "topics", "api-gateway", "runtime":
 		httpx.WriteError(w, http.StatusNotFound, "route not found")
 		return
 	}
@@ -101,6 +103,14 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig(profileFromRequest(r)))
+}
+
+func (h *Handler) topics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.service.GetTopics())
 }
 
 func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {

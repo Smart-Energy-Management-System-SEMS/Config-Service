@@ -115,7 +115,7 @@ Dame solo:
 - Puerto: `8001`
 - Prefix: `/api/v1`
 - Health endpoint: `/api/v1/health`
-- Topics que publica: `monitoring.reading.processed`, `energy.consumption.recorded`, `energy.reading.created`, `monitoring.alert.created`
-- Topics que consume: `device.registered`, `monitoring.reading.ingest`, `analytics.anomaly.detected`
+- Topics que publica: `energy.events`
+- Topics que consume: `device.events`
 
 No modifiqué archivos. Si quieres, en el siguiente paso puedo convertir este inventario en un bloque listo para pegar directamente en tu API Gateway o en tu Config Service.

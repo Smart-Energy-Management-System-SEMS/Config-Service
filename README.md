@@ -1,104 +1,114 @@
 # Config Service (SEMS)
 
-Microservicio de configuracion centralizada para SEMS. Expone configuracion publica para API Gateway y microservicios sin exponer secretos.
+Servicio central de configuracion para la arquitectura SEMS. Expone URLs de microservicios, configuracion Kafka para local y Azure, topics agrupados y el mapeo publish/consume por microservicio.
 
-## Endpoints principales
+## Endpoints
 
+- GET `/health`
 - GET `/api/v1/health`
 - GET `/api/v1/config/health`
 - GET `/api/v1/config/services`
 - GET `/api/v1/config/services/{serviceName}`
 - GET `/api/v1/config/kafka`
+- GET `/api/v1/config/topics`
 - GET `/api/v1/config/api-gateway`
 - GET `/api/v1/config/runtime/{serviceName}/{profile}`
 
-## Puerto y runtime
+## Microservicios soportados
 
-El servicio lee el puerto en este orden:
-1. `PORT` (recomendado para Azure Container Apps)
-2. `CONFIG_SERVICE_PORT`
-3. fallback `8090`
+- IAM Service: `http://localhost:8082`
+- Device Management Service: `http://localhost:8083`
+- Energy Monitoring Service: `http://localhost:8001`
+- Analytics Service: `http://localhost:8004`
+- Alerts Service: `http://localhost:8085`
+- Payments Service: `http://localhost:8086`
+- Subscriptions Service: `http://localhost:18083`
 
-## Variables requeridas
+## Topics agrupados oficiales
 
-Minimas para contenedor/local:
-- `PORT` (ejemplo: `8080`)
-- `CONFIG_SOURCE_PATH` (ejemplo: `Rutas`)
-- `ENVIRONMENT` (ejemplo: `local`, `staging`, `prod`)
+- `iam.events`
+- `device.events`
+- `energy.events`
+- `analytics.events`
+- `alerts.events`
+- `payments.events`
+- `subscriptions.events`
+- `billing.events`
 
-Variables de integracion/config centralizada:
-- `CONFIG_SERVICE_URL`
-- `KAFKA_BROKERS`
-- `KAFKA_SECURITY_PROTOCOL`
-- `KAFKA_SASL_MECHANISM`
-- `KAFKA_USERNAME`
-- `KAFKA_PASSWORD`
-- `DATABASE_URL`
-- `GIN_MODE`
+Los eventos especificos ya no deben usarse como topic principal. Deben viajar dentro del payload usando `eventType`, por ejemplo:
 
-Compatibilidad local Kafka:
-- `KAFKA_BROKERS=localhost:9092`
-- `KAFKA_BOOTSTRAP_SERVERS=localhost:9092`
-- `KAFKA_BOOTSTRAP_SERVERS_LOCAL=localhost:9092`
+```json
+{
+  "eventType": "energy.consumption.recorded",
+  "eventId": "uuid",
+  "occurredAt": "ISO_DATE",
+  "data": {}
+}
+```
 
-## Ejecutar local (sin Docker)
+## Variables locales recomendadas
+
+```env
+PORT=8090
+CONFIG_SOURCE_PATH=Rutas
+ENVIRONMENT=local
+IAM_SERVICE_URL=http://localhost:8082
+DEVICE_SERVICE_URL=http://localhost:8083
+ENERGY_SERVICE_URL=http://localhost:8001
+ANALYTICS_SERVICE_URL=http://localhost:8004
+ALERTS_SERVICE_URL=http://localhost:8085
+PAYMENTS_SERVICE_URL=http://localhost:8086
+SUBSCRIPTIONS_SERVICE_URL=http://localhost:18083
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_BROKERS=localhost:9092
+KAFKA_SECURITY_PROTOCOL=PLAINTEXT
+KAFKA_SASL_MECHANISM=
+```
+
+## Variables Azure recomendadas
+
+```env
+PORT=8080
+CONFIG_SOURCE_PATH=Rutas
+ENVIRONMENT=azure
+IAM_SERVICE_URL=https://iam-service2.<azure-domain>
+DEVICE_SERVICE_URL=https://device-service.<azure-domain>
+ENERGY_SERVICE_URL=https://energy-service.<azure-domain>
+ANALYTICS_SERVICE_URL=https://analytics-service.<azure-domain>
+ALERTS_SERVICE_URL=https://alerts-service.<azure-domain>
+PAYMENTS_SERVICE_URL=https://payments-service.<azure-domain>
+SUBSCRIPTIONS_SERVICE_URL=https://subscriptions-service.<azure-domain>
+KAFKA_BOOTSTRAP_SERVERS=sems-kafka-ns.servicebus.windows.net:9093
+KAFKA_BROKERS=sems-kafka-ns.servicebus.windows.net:9093
+KAFKA_SECURITY_PROTOCOL=SASL_SSL
+KAFKA_SASL_MECHANISM=PLAIN
+KAFKA_SASL_USERNAME=$ConnectionString
+KAFKA_SASL_PASSWORD=<AZURE_EVENT_HUB_CONNECTION_STRING>
+```
+
+## Perfiles
+
+- `local`: usa `KAFKA_BOOTSTRAP_SERVERS_LOCAL` si existe; si no, `KAFKA_BOOTSTRAP_SERVERS` o `KAFKA_BROKERS`
+- `docker`: usa `KAFKA_BOOTSTRAP_SERVERS_DOCKER` si existe
+- `azure`: usa `KAFKA_BOOTSTRAP_SERVERS_AZURE` o `KAFKA_BROKERS_AZURE`; si no existen, reutiliza `KAFKA_BOOTSTRAP_SERVERS`
+
+## Ejecucion local
 
 ```bash
 go run main.go
 ```
 
-Health check local:
+Health check:
 
 ```bash
-curl http://localhost:8090/api/v1/health
-curl http://localhost:8090/api/v1/config/health
+curl http://localhost:8090/health
+curl http://localhost:8090/api/v1/config/kafka
+curl http://localhost:8090/api/v1/config/topics
 ```
 
-## Docker
+## Notas de compatibilidad
 
-### Build
-
-```bash
-docker build -t sems-config-service:latest .
-```
-
-### Run (ejemplo local)
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e PORT=8080 \
-  -e CONFIG_SOURCE_PATH=Rutas \
-  -e ENVIRONMENT=local \
-  -e KAFKA_BROKERS=host.docker.internal:9092 \
-  -e KAFKA_BOOTSTRAP_SERVERS_LOCAL=host.docker.internal:9092 \
-  -e KAFKA_SECURITY_PROTOCOL=PLAINTEXT \
-  -e KAFKA_SASL_MECHANISM=NONE \
-  sems-config-service:latest
-```
-
-## Azure Container Apps (ejemplo)
-
-Definir en la Container App:
-- `PORT=8080`
-- `CONFIG_SOURCE_PATH=Rutas`
-- `ENVIRONMENT=prod`
-- `CONFIG_SERVICE_URL` (si aplica para clientes)
-- `KAFKA_BROKERS=<broker-azure:9092>`
-- `KAFKA_SECURITY_PROTOCOL=SASL_SSL` (segun tu cluster)
-- `KAFKA_SASL_MECHANISM=SCRAM-SHA-256` (segun tu cluster)
-- `KAFKA_USERNAME=<secret>`
-- `KAFKA_PASSWORD=<secret>`
-- `DATABASE_URL=<secret>`
-- `GIN_MODE=release`
-
-Configurar health probe en:
-- `/api/v1/health` (recomendado)
-
-## Seguridad
-
-No exponer ni versionar secretos reales (`DATABASE_URL`, passwords, tokens, credenciales Kafka). Usar secretos de Azure Container Apps y/o Azure Key Vault.
-
-## Fuente de configuracion
-
-La fuente oficial que consume este servicio es la carpeta `Rutas/`.
-La carpeta `Config/` ya no forma parte del flujo operativo.
+- Se mantienen los endpoints existentes.
+- Las URLs de servicios pueden resolverse por variables de entorno y ya no dependen rigidamente de `localhost`.
+- El endpoint `/api/v1/config/kafka` devuelve `enabled`, `bootstrapServers`, `brokers`, `securityProtocol`, `saslMechanism`, `username`, `topics`, `publishTopics` y `consumeTopics`.
+- Los secretos SASL se enmascaran en las respuestas HTTP.

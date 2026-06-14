@@ -110,7 +110,7 @@ Dame solo:
 - Puerto: `8004`
 - Prefix: `/api/v1/analytics`
 - Health endpoint: `/api/v1/analytics/health`
-- Topics que publica: `analytics.device_identified`, `analytics.bill_prediction.generated`, `analytics.recommendation.generated`, `analytics.anomaly.detected`, `analytics.consumption_ranking.generated`
-- Topics que consume: `energy.reading.created`, `device.registered`, `device.status.updated`
+- Topics que publica: `analytics.events`, `billing.events`
+- Topics que consume: `energy.events`
 
 No modifiqué archivos. Si quieres, en el siguiente paso puedo convertir este inventario en un bloque exacto de configuración para tu API Gateway o para tu Config Service, pero sin salir de los valores de este microservicio.

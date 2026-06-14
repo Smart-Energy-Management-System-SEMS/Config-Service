@@ -106,7 +106,7 @@ Solo lista valores de este micro:
 - `Nombre del servicio`: `iam-service`
 - `URL local`: `http://localhost:8082`
 - `Puerto`: `8082`
-- `Prefix`: `No hay prefix global; usar rutas reales /api/v1/auth y /api/v1/users`
+- `Prefix`: `/api/v1`
 - `Health endpoint`: `/health`
-- `Topics que publica`: `iam.user.registered`, `iam.user.logged-in`, `iam.role.assigned`
-- `Topics que consume`: `iam.role-assignment.requested`
+- `Topics que publica`: `iam.events`
+- `Topics que consume`: `No encontrado`

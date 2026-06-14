@@ -116,5 +116,5 @@ Dame solo:
 - Puerto: `18083`
 - Prefix: `/api/v1`
 - Health endpoint: `/health`
-- Topics que publica: `subscription.created`, `subscription.cancelled`, `subscription.plan.changed`, `subscription.expired`, `subscription.updated`
+- Topics que publica: `subscriptions.events`
 - Topics que consume: `No encontrado`

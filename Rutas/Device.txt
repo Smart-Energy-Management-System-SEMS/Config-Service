@@ -115,5 +115,5 @@ Dame solo:
 - Puerto: `8083`
 - Prefix: `/api/v1/device-management`
 - Health endpoint: `/api/v1/device-management/health`
-- Topics que publica: `device.registered`, `device.status.updated`, `device.linked`, `device.unlinked`, `device.configuration.updated`, `device.event.recorded`
+- Topics que publica: `device.events`
 - Topics que consume: No encontrado

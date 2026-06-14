@@ -1,24 +1,30 @@
 package model
 
 type ServiceConfig struct {
-	Name             string   `json:"name"`
-	URL              string   `json:"url"`
-	Port             string   `json:"port"`
-	Prefix           string   `json:"prefix"`
-	Health           string   `json:"health"`
-	HealthAliases    []string `json:"healthAliases,omitempty"`
-	Routes           []string `json:"routes"`
-	TopicsPublished  []string `json:"topicsPublished"`
-	TopicsConsumed   []string `json:"topicsConsumed"`
-	SourceFile       string   `json:"sourceFile"`
-	BoundedContext   string   `json:"boundedContext,omitempty"`
-	LocalPort        string   `json:"local_port,omitempty"`
-	BaseURLLocal     string   `json:"base_url_local,omitempty"`
-	BaseURLDeploy    string   `json:"base_url_deploy,omitempty"`
-	RoutePrefix      string   `json:"route_prefix,omitempty"`
-	MainEndpoints    []string `json:"main_endpoints,omitempty"`
-	Dependencies     []string `json:"dependencies,omitempty"`
-	ExternalServices []string `json:"external_services,omitempty"`
+	Name             string            `json:"name"`
+	DisplayName      string            `json:"displayName,omitempty"`
+	ServiceKey       string            `json:"serviceKey,omitempty"`
+	URL              string            `json:"url"`
+	DeployURL        string            `json:"deployUrl,omitempty"`
+	Port             string            `json:"port"`
+	Prefix           string            `json:"prefix"`
+	Health           string            `json:"health"`
+	HealthAliases    []string          `json:"healthAliases,omitempty"`
+	Routes           []string          `json:"routes"`
+	TopicsPublished  []string          `json:"topicsPublished"`
+	TopicsConsumed   []string          `json:"topicsConsumed"`
+	SourceFile       string            `json:"sourceFile"`
+	BoundedContext   string            `json:"boundedContext,omitempty"`
+	LocalPort        string            `json:"local_port,omitempty"`
+	BaseURLLocal     string            `json:"base_url_local,omitempty"`
+	BaseURLDeploy    string            `json:"base_url_deploy,omitempty"`
+	RoutePrefix      string            `json:"route_prefix,omitempty"`
+	MainEndpoints    []string          `json:"main_endpoints,omitempty"`
+	Dependencies     []string          `json:"dependencies,omitempty"`
+	ExternalServices []string          `json:"external_services,omitempty"`
+	PublishTopics    []string          `json:"publishTopics,omitempty"`
+	ConsumeTopics    []string          `json:"consumeTopics,omitempty"`
+	URLByProfile     map[string]string `json:"urlByProfile,omitempty"`
 }
 
 type GatewayConfig struct {
@@ -32,17 +38,22 @@ type GatewayConfig struct {
 }
 
 type KafkaConfig struct {
+	Enabled          bool                 `json:"enabled"`
 	BootstrapServers string               `json:"bootstrapServers"`
-	Brokers          []string             `json:"brokers"`
+	Brokers          string               `json:"brokers"`
+	BrokerList       []string             `json:"brokerList,omitempty"`
 	SecurityProtocol string               `json:"securityProtocol"`
 	SASLMechanism    string               `json:"saslMechanism"`
 	Username         string               `json:"username"`
-	Password         string               `json:"password"`
+	Password         string               `json:"password,omitempty"`
 	ClientID         string               `json:"clientId"`
 	ConsumerGroup    string               `json:"consumerGroup"`
-	OfficialTopics   []string             `json:"officialTopics"`
-	ProducedTopics   map[string][]string  `json:"producedTopics"`
-	ConsumedTopics   map[string][]string  `json:"consumedTopics"`
+	Topics           []string             `json:"topics"`
+	PublishTopics    map[string][]string  `json:"publishTopics"`
+	ConsumeTopics    map[string][]string  `json:"consumeTopics"`
+	OfficialTopics   []string             `json:"officialTopics,omitempty"`
+	ProducedTopics   map[string][]string  `json:"producedTopics,omitempty"`
+	ConsumedTopics   map[string][]string  `json:"consumedTopics,omitempty"`
 	Inconsistencies  []TopicInconsistency `json:"inconsistencies,omitempty"`
 }
 
