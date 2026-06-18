@@ -4,7 +4,8 @@
 *.iml
 *.log
 .env
-.env.*
+.env.local
+.env.*.local
 .vscode
 integration-examples/
 README.md
