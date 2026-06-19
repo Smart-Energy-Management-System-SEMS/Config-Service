@@ -1,8 +1,6 @@
 package configuration
 
 import (
-	"bufio"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,13 +10,7 @@ import (
 	"config-service/config-service/domain/model"
 )
 
-const pending = "PENDING_CONFIGURATION"
-
-var (
-	portRegex        = regexp.MustCompile(`\d{2,5}`)
-	serviceKeyRegex  = regexp.MustCompile(`[^a-z0-9-]+`)
-	endpointFmtRegex = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)\s+/`)
-)
+var firstBacktickRegex = regexp.MustCompile("`([^`]*)`")
 
 type Loader struct {
 	sourcePath string
@@ -26,7 +18,7 @@ type Loader struct {
 
 func NewLoader(sourcePath string) *Loader {
 	if strings.TrimSpace(sourcePath) == "" {
-		sourcePath = "Config"
+		sourcePath = "Rutas"
 	}
 	return &Loader{sourcePath: sourcePath}
 }
@@ -37,300 +29,273 @@ func (l *Loader) LoadServices() ([]model.ServiceConfig, error) {
 		return nil, err
 	}
 
-	services := make([]model.ServiceConfig, 0)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".txt") {
+	services := make([]model.ServiceConfig, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".txt") {
 			continue
 		}
-		path := filepath.Join(l.sourcePath, e.Name())
-		svc, err := parseServiceFile(path, e.Name())
+
+		service, err := l.parseServiceFile(filepath.Join(l.sourcePath, entry.Name()), entry.Name())
 		if err != nil {
-			continue
+			return nil, err
 		}
-		services = append(services, svc)
+		services = append(services, service)
 	}
 
 	sort.Slice(services, func(i, j int) bool {
 		return services[i].Name < services[j].Name
 	})
+
 	return services, nil
 }
 
-func parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
-	file, err := os.Open(path)
+func (l *Loader) parseServiceFile(path, fileName string) (model.ServiceConfig, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return model.ServiceConfig{}, err
 	}
-	defer file.Close()
 
-	svc := model.ServiceConfig{
-		Name:             normalizeServiceName(""),
-		BoundedContext:   pending,
-		LocalPort:        "",
-		BaseURLLocal:     "",
-		BaseURLDeploy:    "",
-		RoutePrefix:      "",
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	service := model.ServiceConfig{
+		SourceFile:       fileName,
+		Routes:           []string{},
+		TopicsPublished:  []string{},
+		TopicsConsumed:   []string{},
+		HealthAliases:    []string{},
 		MainEndpoints:    []string{},
 		Dependencies:     []string{},
 		ExternalServices: []string{},
-		SourceFile:       fileName,
 	}
 
-	scanner := bufio.NewScanner(file)
-	section := ""
-	for scanner.Scan() {
-		rawLine := scanner.Text()
-		line := normalizeText(rawLine)
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
 		}
-		lc := strings.ToLower(line)
 
 		switch {
-		case strings.Contains(lc, "nombre del microservicio"):
-			section = "name"
-			continue
-		case strings.Contains(lc, "bounded context"):
-			section = "context"
-			continue
-		case strings.Contains(lc, "puerto local"):
-			section = "port"
-			continue
-		case strings.Contains(lc, "base url local"):
-			section = "base_local"
-			continue
-		case strings.Contains(lc, "base url esperada para deploy"):
-			section = "base_deploy"
-			continue
-		case strings.Contains(lc, "endpoints principales"):
-			section = "endpoints"
-			continue
-		case strings.Contains(lc, "prefijo base de rutas"):
-			section = "prefix"
-			continue
-		case strings.Contains(lc, "servicios externos"):
-			section = "external"
-			continue
-		case strings.Contains(lc, "dependencias de otros microservicios"):
-			section = "deps"
-			continue
-		}
-
-		switch section {
-		case "name":
-			if svc.Name == pending {
-				svc.Name = normalizeServiceName(takeToken(line))
+		case strings.HasPrefix(line, "- Nombre del servicio:"):
+			service.Name = firstBacktickValue(line)
+		case strings.HasPrefix(line, "- URL local:"):
+			service.URL = firstBacktickValue(line)
+		case strings.HasPrefix(line, "- Puerto:"):
+			service.Port = firstBacktickValue(line)
+		case strings.HasPrefix(line, "- Prefix:"):
+			service.Prefix = normalizePrefixValue(firstBacktickValue(line))
+		case strings.HasPrefix(line, "- Health endpoint:"):
+			service.Health = firstBacktickValue(line)
+		case strings.HasPrefix(line, "- Topics que publica:"):
+			service.TopicsPublished = splitBacktickList(line)
+		case strings.HasPrefix(line, "- Topics que consume:"):
+			service.TopicsConsumed = splitBacktickList(line)
+		case strings.Contains(line, "| Servicio |"):
+			if service.Name == "" {
+				service.Name = firstBacktickValue(line)
 			}
-		case "context":
-			if svc.BoundedContext == pending {
-				svc.BoundedContext = line
+		case strings.Contains(line, "| Base URL local sugerida |"):
+			if service.URL == "" {
+				service.URL = firstBacktickValue(line)
 			}
-		case "port":
-			if svc.LocalPort == "" {
-				svc.LocalPort = extractPort(line)
+		case strings.Contains(line, "| Puerto |"):
+			if service.Port == "" {
+				service.Port = firstBacktickValue(line)
 			}
-		case "base_local":
-			if svc.BaseURLLocal == "" {
-				svc.BaseURLLocal = normalizeLocalURL(line, svc.LocalPort)
+		case strings.Contains(line, "| Prefix |"):
+			if service.Prefix == "" {
+				service.Prefix = normalizePrefixValue(firstBacktickValue(line))
 			}
-		case "base_deploy":
-			if svc.BaseURLDeploy == "" && strings.Contains(strings.ToLower(line), "http") {
-				svc.BaseURLDeploy = line
-			}
-		case "endpoints":
-			ep := parseListItem(rawLine)
-			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && endpointFmtRegex.MatchString(ep) {
-				svc.MainEndpoints = append(svc.MainEndpoints, ep)
-			}
-		case "prefix":
-			if svc.RoutePrefix == "" && strings.HasPrefix(line, "/") {
-				svc.RoutePrefix = strings.Fields(line)[0]
-			}
-		case "external":
-			val := parseListItem(rawLine)
-			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && val != "" {
-				svc.ExternalServices = append(svc.ExternalServices, val)
-			}
-		case "deps":
-			val := parseListItem(rawLine)
-			if strings.HasPrefix(strings.TrimSpace(rawLine), "-") && val != "" {
-				svc.Dependencies = append(svc.Dependencies, val)
-			}
-		}
-	}
-
-	if svc.Name == pending {
-		svc.Name = normalizeNameFromFile(fileName)
-	}
-	if svc.LocalPort == "" {
-		svc.LocalPort = defaultPortForService(svc.Name)
-	}
-	if svc.BaseURLLocal == "" {
-		svc.BaseURLLocal = "http://localhost:" + svc.LocalPort
-	}
-	if svc.RoutePrefix == "" {
-		svc.RoutePrefix = defaultPrefixForService(svc.Name)
-	}
-	if len(svc.MainEndpoints) == 0 {
-		svc.MainEndpoints = []string{pending}
-	}
-	if len(svc.Dependencies) == 0 {
-		svc.Dependencies = []string{pending}
-	}
-	if len(svc.ExternalServices) == 0 {
-		svc.ExternalServices = []string{pending}
-	}
-
-	ensureUniqueLocalPort(&svc)
-	return svc, scanner.Err()
-}
-
-func normalizeText(v string) string {
-	v = strings.TrimSpace(v)
-	v = strings.ReplaceAll(v, "`", "")
-	return strings.TrimSpace(v)
-}
-
-func parseListItem(v string) string {
-	v = normalizeText(v)
-	v = strings.TrimPrefix(v, "- ")
-	v = strings.TrimPrefix(v, "-")
-	return strings.TrimSpace(v)
-}
-
-func takeToken(v string) string {
-	if i := strings.Index(v, "("); i > 0 {
-		v = v[:i]
-	}
-	return strings.TrimSpace(v)
-}
-
-func extractPort(v string) string {
-	if p := portRegex.FindString(v); p != "" {
-		return p
-	}
-	return ""
-}
-
-func normalizeLocalURL(raw, knownPort string) string {
-	candidate := strings.Fields(raw)
-	for _, t := range candidate {
-		if strings.HasPrefix(strings.ToLower(t), "http://") {
-			u, err := url.Parse(strings.TrimSpace(t))
-			if err == nil && u.Host != "" {
-				if u.Scheme == "http" && strings.Contains(u.Host, "localhost") {
-					if p := u.Port(); p != "" {
-						return "http://localhost:" + p
-					}
+		case strings.Contains(line, "| Health |"):
+			healths := splitBacktickList(line)
+			if len(healths) > 0 {
+				if service.Health == "" {
+					service.Health = healths[0]
 				}
+				service.HealthAliases = uniqueStrings(append(service.HealthAliases, healths...))
+			}
+		case strings.Contains(line, "| Topics publica |"):
+			if len(service.TopicsPublished) == 0 {
+				service.TopicsPublished = splitBacktickList(line)
+			}
+		case strings.Contains(line, "| Topics consume |"):
+			if len(service.TopicsConsumed) == 0 {
+				service.TopicsConsumed = splitBacktickList(line)
+			}
+		case strings.Contains(line, "| Rutas principales |"):
+			service.MainEndpoints = splitBacktickList(line)
+		case strings.Contains(strings.ToLower(line), "path predicates") && strings.Contains(strings.ToLower(line), "recomendados"):
+			service.Routes = splitBacktickList(line)
+		case strings.Contains(strings.ToLower(line), "health path") && strings.Contains(strings.ToLower(line), "recomendado"):
+			if health := firstBacktickValue(line); health != "" {
+				service.Health = health
 			}
 		}
 	}
-	if knownPort != "" {
-		return "http://localhost:" + knownPort
-	}
-	return ""
+
+	service.Prefix = normalizePrefixValue(service.Prefix)
+	service.TopicsPublished = normalizeNotFoundList(service.TopicsPublished)
+	service.TopicsConsumed = normalizeNotFoundList(service.TopicsConsumed)
+	service.MainEndpoints = normalizeNotFoundList(service.MainEndpoints)
+	service.HealthAliases = uniqueStrings(removeString(normalizeNotFoundList(service.HealthAliases), service.Health))
+
+	service.Routes = normalizeRoutes(service)
+
+	service.LocalPort = service.Port
+	service.BaseURLLocal = service.URL
+	service.RoutePrefix = service.Prefix
+
+	return service, nil
 }
 
-func normalizeServiceName(v string) string {
-	v = strings.ToLower(strings.TrimSpace(v))
-	v = strings.ReplaceAll(v, "_", "-")
-	v = strings.ReplaceAll(v, " ", "-")
-	v = strings.ReplaceAll(v, "microservice-", "")
-	v = serviceKeyRegex.ReplaceAllString(v, "")
-	if v == "" {
-		return pending
+func normalizeRoutes(service model.ServiceConfig) []string {
+	if len(service.Routes) > 0 {
+		routes := make([]string, 0, len(service.Routes))
+		for _, route := range service.Routes {
+			if route == service.Health || isHealthAlias(service.HealthAliases, route) || route == "" || route == "No encontrado" || !strings.HasPrefix(route, "/") {
+				continue
+			}
+			routes = append(routes, route)
+		}
+		routes = replaceBroadWebhook(routes, service.MainEndpoints)
+		return uniqueStrings(routes)
 	}
-	if !strings.HasSuffix(v, "-service") {
-		if strings.Contains(v, "iam") {
-			return "iam-service"
+
+	routes := make([]string, 0, len(service.MainEndpoints))
+	for _, endpoint := range service.MainEndpoints {
+		normalized := strings.TrimSpace(endpoint)
+		if normalized == "" || normalized == "No encontrado" || normalized == service.Health {
+			continue
 		}
-		if strings.Contains(v, "analytics") {
-			return "analytics-service"
+		if strings.HasPrefix(normalized, "/") {
+			routes = append(routes, normalized)
+			continue
 		}
-		if strings.Contains(v, "energy") {
-			return "energy-monitoring-service"
-		}
-		if strings.Contains(v, "device") {
-			return "device-management-service"
-		}
-		if strings.Contains(v, "payment") {
-			return "payments-service"
-		}
-		if strings.Contains(v, "sub") {
-			return "subscriptions-service"
-		}
-		if strings.Contains(v, "alert") {
-			return "alert-service"
+		if service.Prefix != "" && service.Prefix != "No encontrado" {
+			routes = append(routes, joinRoute(service.Prefix, normalized))
 		}
 	}
-	return v
+	return uniqueStrings(routes)
 }
 
-func normalizeNameFromFile(fileName string) string {
-	base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	base = strings.ReplaceAll(base, "-C", "")
-	return normalizeServiceName(base)
+func replaceBroadWebhook(routes, mainEndpoints []string) []string {
+	hasExactWebhook := false
+	exactWebhook := ""
+	for _, endpoint := range mainEndpoints {
+		if strings.Contains(endpoint, "/webhooks/stripe") {
+			hasExactWebhook = true
+			exactWebhook = endpoint
+			break
+		}
+	}
+	if !hasExactWebhook {
+		return routes
+	}
+
+	out := make([]string, 0, len(routes))
+	for _, route := range routes {
+		if strings.HasSuffix(route, "/webhooks/**") {
+			out = append(out, exactWebhook)
+			continue
+		}
+		out = append(out, route)
+	}
+	return out
 }
 
-func defaultPortForService(service string) string {
-	switch service {
-	case "analytics-service":
-		return "8004"
-	case "energy-monitoring-service":
-		return "8001"
-	case "alert-service":
-		return "8085"
-	case "device-management-service":
-		return "8083"
-	case "iam-service":
-		return "8080"
-	case "subscriptions-service":
-		return "8082"
-	case "payments-service":
-		return "8086"
-	default:
+func joinRoute(prefix, route string) string {
+	prefix = strings.TrimSuffix(strings.TrimSpace(prefix), "/")
+	route = strings.TrimPrefix(strings.TrimSpace(route), "/")
+	if prefix == "" {
+		return "/" + route
+	}
+	return prefix + "/" + route
+}
+
+func firstBacktickValue(line string) string {
+	matches := firstBacktickRegex.FindStringSubmatch(line)
+	if len(matches) < 2 {
 		return ""
 	}
+	return strings.TrimSpace(matches[1])
 }
 
-func defaultPrefixForService(service string) string {
-	switch service {
-	case "analytics-service":
-		return "/api/v1/analytics"
-	case "device-management-service":
-		return "/api/v1/device-management"
-	case "alert-service":
-		return "/api/v1/alerts"
-	case "subscriptions-service":
-		return "/api/v1/subscriptions"
-	case "payments-service":
-		return "/api/v1/payments"
-	case "energy-monitoring-service":
-		return "/api/v1/energy"
-	case "iam-service":
-		return "/api/v1/auth"
-	default:
+func splitBacktickList(line string) []string {
+	matches := firstBacktickRegex.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		value := strings.TrimSpace(match[1])
+		if value == "" {
+			continue
+		}
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return uniqueStrings(out)
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func removeString(values []string, target string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != target {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func normalizeNotFoundList(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	if len(values) == 1 && strings.EqualFold(strings.TrimSpace(values[0]), "No encontrado") {
+		return []string{}
+	}
+	return values
+}
+
+func normalizePrefixValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	if strings.Contains(strings.ToLower(value), "no hay prefix global") {
 		return "/api/v1"
 	}
+	return value
 }
 
-func ensureUniqueLocalPort(svc *model.ServiceConfig) {
-	// Alinea puertos locales esperados por contratos de integracion.
-	if svc.Name == "subscriptions-service" {
-		svc.LocalPort = "8082"
-		svc.BaseURLLocal = "http://localhost:8082"
+func isHealthAlias(aliases []string, route string) bool {
+	for _, alias := range aliases {
+		if alias == route {
+			return true
+		}
 	}
-	if svc.Name == "alert-service" {
-		svc.LocalPort = "8085"
-		svc.BaseURLLocal = "http://localhost:8085"
-	}
-	if svc.Name == "payments-service" {
-		svc.LocalPort = "8086"
-		svc.BaseURLLocal = "http://localhost:8086"
-	}
-	if svc.Name == "energy-monitoring-service" {
-		svc.LocalPort = "8001"
-		svc.BaseURLLocal = "http://localhost:8001"
-	}
+	return false
 }

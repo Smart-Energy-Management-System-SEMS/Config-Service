@@ -17,9 +17,12 @@ func NewHandler(service *services.ConfigService) *Handler {
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/health", h.health)
+	mux.HandleFunc("/api/v1/health", h.health)
 	mux.HandleFunc("/api/v1/config/health", h.health)
 	mux.HandleFunc("/api/v1/config/services", h.services)
 	mux.HandleFunc("/api/v1/config/services/", h.serviceByName)
+	mux.HandleFunc("/api/v1/config/topics", h.topics)
 	mux.HandleFunc("/api/v1/config/", h.configByName)
 	mux.HandleFunc("/api/v1/config/runtime/", h.runtimeConfig)
 	mux.HandleFunc("/api/v1/config/kafka", h.kafka)
@@ -39,16 +42,12 @@ func (h *Handler) services(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
+
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"services":     h.service.GetAllServices(),
-		"services_map": h.service.GetAllServicesMap(profile),
+		"count":           len(h.service.GetAllServices()),
+		"services":        h.service.GetAllServices(),
+		"serviceUrls":     h.service.ServiceEndpoints(profileFromRequest(r)),
+		"inconsistencies": h.service.GetInconsistencies(),
 	})
 }
 
@@ -57,11 +56,13 @@ func (h *Handler) serviceByName(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
 	name := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/config/services/"))
 	if name == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "service name is required")
 		return
 	}
+
 	service, err := h.service.GetServiceByName(name)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
@@ -83,25 +84,17 @@ func (h *Handler) configByName(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch name {
-	case "health", "services", "kafka", "api-gateway", "runtime":
+	case "health", "services", "kafka", "topics", "api-gateway", "runtime":
 		httpx.WriteError(w, http.StatusNotFound, "route not found")
 		return
 	}
 
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
-	}
-	if profile == "" {
-		profile = "local"
-	}
-
-	payload, err := h.service.GetServiceCompatibilityConfig(name, profile)
+	service, err := h.service.GetServiceByName(name)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "service not found")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, service)
 }
 
 func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
@@ -109,14 +102,15 @@ func (h *Handler) kafka(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	if profile == "" {
-		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig(profileFromRequest(r)))
+}
+
+func (h *Handler) topics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
 	}
-	if profile == "" {
-		profile = "local"
-	}
-	httpx.WriteJSON(w, http.StatusOK, h.service.KafkaConfig(profile))
+	httpx.WriteJSON(w, http.StatusOK, h.service.GetTopics())
 }
 
 func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +118,13 @@ func (h *Handler) gateway(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, h.service.GatewayConfig())
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"gateway":         h.service.GatewayConfig(),
+		"serviceUrls":     h.service.ServiceEndpoints(profileFromRequest(r)),
+		"services":        h.service.GetAllServices(),
+		"inconsistencies": h.service.GetInconsistencies(),
+	})
 }
 
 func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +132,7 @@ func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/config/runtime/")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
@@ -145,4 +146,15 @@ func (h *Handler) runtimeConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func profileFromRequest(r *http.Request) string {
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = strings.TrimSpace(r.URL.Query().Get("env"))
+	}
+	if profile == "" {
+		profile = "local"
+	}
+	return profile
 }

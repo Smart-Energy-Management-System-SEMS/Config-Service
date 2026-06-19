@@ -1,0 +1,113 @@
+# Inventario técnico - Alert Service
+
+## 1. Identificación
+- Servicio: `alert-service`
+- Lenguaje/framework: `Go 1.22`, `Gin`, `GORM`, `kafka-go`
+- Archivo principal: [main.go](</abs/path not available>)
+- Archivos de rutas/controladores: [alert/interfaces/rest/router.go](</abs/path not available>), [alert/interfaces/rest/controllers/alert_controller.go](</abs/path not available>), [alert/interfaces/rest/controllers/threshold_controller.go](</abs/path not available>), [alert/interfaces/rest/controllers/inactivity_rule_controller.go](</abs/path not available>), [alert/interfaces/rest/controllers/notification_preference_controller.go](</abs/path not available>), [alert/interfaces/rest/controllers/kafka_controller.go](</abs/path not available>)
+- Archivos de configuración: [alert/infrastructure/configuration/config.go](</abs/path not available>), [.env](</abs/path not available>), [.env.example](</abs/path not available>), [Dockerfile](</abs/path not available>), [docker-compose.yml](</abs/path not available>), `application.properties`: No encontrado, `application.yaml`: No encontrado, `settings.py`: No encontrado
+
+## 2. HTTP / Red
+- Puerto real: `8085` desde `.env` con `SERVER_PORT=8085`; parece el real local si se ejecuta fuera de Docker y sin override externo
+- Puerto por defecto: `8080` en código si no existen `PORT` ni `SERVER_PORT`
+- Variable de puerto: prioridad real en código `PORT` > `SERVER_PORT`
+- Host: No encontrado; el servidor usa `":" + cfg.ServerPort`, lo que implica bind a todas las interfaces
+- Prefix/base path: `/api/v1`
+- Health endpoints: `/api/v1/health`
+- CORS: Sí; origins `http://localhost:3000`, `http://localhost:5173`; methods `GET, POST, PATCH, PUT, DELETE, OPTIONS`; headers `Origin, Content-Type, Accept, Authorization`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/api/v1/health` | inline handler | `alert/interfaces/rest/router.go` |
+| GET | `/api/v1/alerts` | `AlertController.GetAlerts` | `alert/interfaces/rest/controllers/alert_controller.go` |
+| GET | `/api/v1/alerts/:id` | `AlertController.GetAlertByID` | `alert/interfaces/rest/controllers/alert_controller.go` |
+| GET | `/api/v1/users/:userId/alerts` | `AlertController.GetAlertsByUser` | `alert/interfaces/rest/controllers/alert_controller.go` |
+| POST | `/api/v1/alerts` | `AlertController.CreateAlert` | `alert/interfaces/rest/controllers/alert_controller.go` |
+| PATCH | `/api/v1/alerts/:id/status` | `AlertController.UpdateAlertStatus` | `alert/interfaces/rest/controllers/alert_controller.go` |
+| POST | `/api/v1/thresholds` | `ThresholdController.CreateThreshold` | `alert/interfaces/rest/controllers/threshold_controller.go` |
+| GET | `/api/v1/users/:userId/thresholds` | `ThresholdController.GetThresholdsByUser` | `alert/interfaces/rest/controllers/threshold_controller.go` |
+| POST | `/api/v1/inactivity-rules` | `InactivityRuleController.CreateRule` | `alert/interfaces/rest/controllers/inactivity_rule_controller.go` |
+| GET | `/api/v1/users/:userId/inactivity-rules` | `InactivityRuleController.GetRulesByUser` | `alert/interfaces/rest/controllers/inactivity_rule_controller.go` |
+| POST | `/api/v1/notification-preferences` | `NotificationPreferenceController.CreatePreference` | `alert/interfaces/rest/controllers/notification_preference_controller.go` |
+| GET | `/api/v1/users/:userId/notification-preferences` | `NotificationPreferenceController.GetPreferencesByUser` | `alert/interfaces/rest/controllers/notification_preference_controller.go` |
+| POST | `/api/v1/kafka/publish-test` | `KafkaController.PublishTestEvent` | `alert/interfaces/rest/controllers/kafka_controller.go` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_ALERT_CREATED` | `alert.created` en `.env`; default en código `alert.created`; puede ser override por `CONFIG_SERVICE_URL` | Publica evento al persistir una alerta real | `alert/application/commandservices/alert_command_service.go` | `CreateAlert` |
+| `KAFKA_TOPIC_ALERT_CREATED` | `alert.created` en `.env`; default en código `alert.created`; puede ser override por `CONFIG_SERVICE_URL` | Publicación manual de prueba por HTTP | `alert/interfaces/rest/controllers/kafka_controller.go` | `PublishTestEvent` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| `KAFKA_CONSUMPTION_TOPICS` / fallback `KAFKA_CONSUMPTION_TOPIC` / legacy `KAFKA_TOPIC_DEVICE_READING_CREATED` | `energy.reading.created` | Evento de energía; evalúa thresholds e inactividad | `alert/infrastructure/messaging/kafka/consumption_consumer.go` + `alert/application/eventhandlers/consumption_event_handler.go` | `ConsumptionConsumer.Start` -> `IntegrationEventHandler.HandleMessage` |
+| `KAFKA_CONSUMPTION_TOPICS` / fallback `KAFKA_CONSUMPTION_TOPIC` / legacy `KAFKA_TOPIC_DEVICE_READING_CREATED` | `analytics.anomaly.detected` | Evento genérico con mapeo a alerta `analytics_anomaly` | mismos archivos | `ConsumptionConsumer.Start` -> `IntegrationEventHandler.HandleMessage` |
+| `KAFKA_CONSUMPTION_TOPICS` / fallback `KAFKA_CONSUMPTION_TOPIC` / legacy `KAFKA_TOPIC_DEVICE_READING_CREATED` | `energy.consumption.recorded` | Evento de energía; evalúa thresholds e inactividad | mismos archivos | `ConsumptionConsumer.Start` -> `IntegrationEventHandler.HandleMessage` |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `.env: localhost:9092` ; default código `localhost:9092` ; Docker app `kafka:9092` vía `KAFKA_BROKERS_CONTAINER` | `.env`, `config.go`, `docker-compose.yml` |
+| `KAFKA_BOOTSTRAP_SERVERS` | No encontrado | No encontrado |
+| `KAFKA_BOOTSTRAP_SERVER` | `kafka:9092` solo para `kafka-topics-init`, no para el runtime de la app | `docker-compose.yml`, `scripts/create-topics.sh` |
+| `KAFKA_CONSUMER_GROUP` | `.env: alerts-service-group` ; `.env.example/default código: alert-service-group` | `.env`, `.env.example`, `config.go` |
+| `KAFKA_GROUP_ID` | `.env: alerts-service-group` ; fallback leído por código si falta `KAFKA_CONSUMER_GROUP` | `.env`, `config.go` |
+| `KAFKA_CLIENT_ID` | `.env: alerts-service` ; no usado por el código | `.env` |
+| `KAFKA_CONSUMPTION_TOPICS` | `.env.example: energy.reading.created,analytics.anomaly.detected,energy.consumption.recorded` ; no existe en `.env` | `.env.example`, `config.go` |
+| `KAFKA_CONSUMPTION_TOPIC` | `.env: energy.consumption.recorded` ; `.env.example: energy.consumption.recorded` | `.env`, `.env.example`, `config.go` |
+| `KAFKA_TOPIC_DEVICE_READING_CREATED` | `.env: energy.consumption.recorded` ; variable legacy leída por código | `.env`, `config.go` |
+| `KAFKA_TOPIC_ALERT_CREATED` | `.env/.env.example: alert.created` ; default código `alert.created` | `.env`, `.env.example`, `config.go` |
+| `KAFKA_TOPIC_ALERT_SENT` | `.env: alert.sent` ; no usado por el código | `.env` |
+| `KAFKA_TOPIC_PAYMENT_COMPLETED` | `.env: payment.completed` ; no usado por el código | `.env` |
+| `KAFKA_TOPICS` | `.env.example: energy.reading.created,analytics.anomaly.detected,energy.consumption.recorded,alert.created` ; en Docker Compose hay una lista mucho más grande para autocreación | `.env.example`, `docker-compose.yml`, `scripts/create-topics.sh` |
+| `KAFKA_SECURITY_PROTOCOL` | vacío; no usado por el código | `.env.example` |
+| `KAFKA_SASL_MECHANISM` | vacío; no usado por el código | `.env.example` |
+| `KAFKA_USERNAME` | vacío; no usado por el código | `.env.example` |
+| `KAFKA_PASSWORD` | vacío; no usado por el código | `.env.example` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `alert-service` |
+| Puerto | `8085` local real por `.env`; `8080` default de código/Docker |
+| Base URL local sugerida | `http://localhost:8085/api/v1` |
+| Prefix | `/api/v1` |
+| Health | `/api/v1/health` |
+| Rutas principales | `/api/v1/alerts`, `/api/v1/alerts/:id`, `/api/v1/alerts/:id/status`, `/api/v1/users/:userId/alerts`, `/api/v1/thresholds`, `/api/v1/users/:userId/thresholds`, `/api/v1/inactivity-rules`, `/api/v1/users/:userId/inactivity-rules`, `/api/v1/notification-preferences`, `/api/v1/users/:userId/notification-preferences`, `/api/v1/kafka/publish-test` |
+| Topics publica | `alert.created` |
+| Topics consume | `energy.reading.created`, `analytics.anomaly.detected`, `energy.consumption.recorded` |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente: `.env` usa `SERVER_PORT=8085`, pero `.env.example`, `Dockerfile`, default de código y `docker-compose.yml` apuntan a `8080`.
+- Prioridad de variables de puerto: el código prioriza `PORT` sobre `SERVER_PORT`; en `.env` solo existe `SERVER_PORT`, pero en Docker Compose se inyecta `PORT=8080`, por lo que local y contenedor no coinciden.
+- `CONFIG_SERVICE_URL=http://localhost:8090` está activo en `.env`; este micro puede sobrescribir puerto/topics/brokers desde una fuente externa, pero esa configuración no está visible aquí.
+- Health check inconsistente/incompleto: el código expone `/api/v1/health`, pero `Dockerfile` no define `HEALTHCHECK` y `docker-compose.yml` no define healthcheck para `alert-service`.
+- Topics de consumo definidos por código no coinciden con `.env` local: aunque `.env` solo declara `energy.consumption.recorded`, `config.go` fuerza además `energy.reading.created` y `analytics.anomaly.detected`.
+- Legacy Kafka duplicado: `KAFKA_CONSUMPTION_TOPIC` y `KAFKA_TOPIC_DEVICE_READING_CREATED` cumplen el mismo rol fallback; ambos apuntan a `energy.consumption.recorded`.
+- Grupos Kafka duplicados: `KAFKA_CONSUMER_GROUP` y `KAFKA_GROUP_ID` son equivalentes; el código usa el primero y deja el segundo como fallback.
+- Variables Kafka existentes pero no usadas por la app runtime: `KAFKA_CLIENT_ID`, `KAFKA_TOPIC_ALERT_SENT`, `KAFKA_TOPIC_PAYMENT_COMPLETED`, `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`.
+- `KAFKA_TOPICS` y `KAFKA_BOOTSTRAP_SERVER` solo sirven al init de Docker; no afectan al runtime del microservicio.
+- Docker Compose autocrea muchos topics adicionales, pero el consumidor real local de este micro solo queda configurado para 3 topics.
+- No encontré consumers sin handler, publishers definidos sin uso, endpoints definidos fuera del router, ni handlers creados pero no conectados.
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+- `SERVICE_URL` recomendado: `http://localhost:8085`
+- Path predicates recomendados: `/api/v1/health`, `/api/v1/alerts`, `/api/v1/alerts/*`, `/api/v1/alerts/*/status`, `/api/v1/users/*/alerts`, `/api/v1/thresholds`, `/api/v1/users/*/thresholds`, `/api/v1/inactivity-rules`, `/api/v1/users/*/inactivity-rules`, `/api/v1/notification-preferences`, `/api/v1/users/*/notification-preferences`, `/api/v1/kafka/publish-test`
+- Health path recomendado: `/api/v1/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+- Nombre del servicio: `alerts-service`
+- URL local: `http://localhost:8085`
+- Puerto: `8085`
+- Prefix: `/api/v1`
+- Health endpoint: `/api/v1/health`
+- Topics que publica: `alerts.events`
+- Topics que consume: `energy.events`, `analytics.events`
+
+Si quieres, en el siguiente paso puedo convertir este inventario directamente en bloques listos para pegar en tu API Gateway y en tu Config Service, sin auditar ningún otro repo.

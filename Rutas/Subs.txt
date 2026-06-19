@@ -1,0 +1,120 @@
+# Inventario técnico - Subscriptions Service
+
+## 1. Identificación
+- Servicio: `subscriptions-service` (Subscriptions Service)
+- Lenguaje/framework: Go + Gin (`github.com/gin-gonic/gin`), GORM, `segmentio/kafka-go`
+- Archivo principal: `main.go`
+- Archivos de rutas/controladores: `subscriptions/router.go`, `subscriptions/interfaces/rest/controllers/subscription_controller.go`
+- Archivos de configuración: `subscriptions/infrastructure/configuration/config.go`, `.env`, `.env.example`, `Dockerfile`, `docker-compose.yml`
+
+## 2. HTTP / Red
+- Puerto real: `18083` en ejecución local con el `.env` actual. En Docker Compose el proceso escucha en `8080` y se expone al host como `8083` por `APP_PORT` (`${APP_PORT:-8083}:8080`)
+- Puerto por defecto: `8080`
+- Variable de puerto: precedencia real en código `PORT` > `SERVER_PORT` > `remote.ServerPort` > `8080`
+- Host: No encontrado explícito. Inferido: bind en todas las interfaces por `r.Run(":"+cfg.ServerPort)`
+- Prefix/base path: `/api/v1`
+- Health endpoints: `/health`, `/api/v1/health`
+- CORS: Sí. Permite `http://localhost:3000` y `http://localhost:5173`; métodos `GET, POST, PUT, PATCH, DELETE, OPTIONS`; `Allow-Credentials=true`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/health` | inline health handler | `subscriptions/router.go` |
+| GET | `/api/v1/health` | inline health handler | `subscriptions/router.go` |
+| GET | `/api/v1/subscription-plans` | `SubscriptionController.GetPlans` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| GET | `/api/v1/subscription-plans/:planId` | `SubscriptionController.GetPlanByID` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| POST | `/api/v1/subscription-plans` | `SubscriptionController.CreatePlan` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| PUT | `/api/v1/subscription-plans/:planId` | `SubscriptionController.UpdatePlan` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| PATCH | `/api/v1/subscription-plans/:planId/deactivate` | `SubscriptionController.DeactivatePlan` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| GET | `/api/v1/subscriptions/:subscriptionId` | `SubscriptionController.GetSubscriptionByID` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| GET | `/api/v1/subscriptions/users/:userId` | `SubscriptionController.GetSubscriptionsByUserID` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| POST | `/api/v1/subscriptions` | `SubscriptionController.CreateSubscription` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| PATCH | `/api/v1/subscriptions/:subscriptionId/cancel` | `SubscriptionController.CancelSubscription` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| PATCH | `/api/v1/subscriptions/:subscriptionId/change-plan` | `SubscriptionController.ChangePlan` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+| POST | `/api/v1/webhooks/stripe` | `SubscriptionController.StripeWebhook` | `subscriptions/interfaces/rest/controllers/subscription_controller.go` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_SUBSCRIPTION_CREATED` | `subscription.created` | Publica al crear una suscripción | `subscriptions/application/commandservices/subscription_command_service.go` | `SubscriptionCommandService.Create` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CANCELLED` | `subscription.cancelled` | Publica al cancelar una suscripción | `subscriptions/application/commandservices/subscription_command_service.go` | `SubscriptionCommandService.Cancel` |
+| `KAFKA_TOPIC_SUBSCRIPTION_PLAN_CHANGED` | `subscription.plan.changed` | Publica al cambiar de plan | `subscriptions/application/commandservices/subscription_command_service.go` | `SubscriptionCommandService.ChangePlan` |
+| `KAFKA_TOPIC_SUBSCRIPTION_EXPIRED` | `subscription.expired` | Publica cuando Stripe envía `customer.subscription.deleted` | `subscriptions/application/eventhandlers/stripe_webhook_handler.go` | `StripeWebhookHandler.handleSubscriptionEvent` |
+| `KAFKA_TOPIC_SUBSCRIPTION_UPDATED` | `subscription.updated` | Publica cuando Stripe envía `customer.subscription.updated` | `subscriptions/application/eventhandlers/stripe_webhook_handler.go` | `StripeWebhookHandler.handleSubscriptionEvent` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| No encontrado | No encontrado | No se hallaron consumers Kafka registrados en este microservicio | No encontrado | No encontrado |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `.env=localhost:9092`; `docker-compose.yml=kafka:9092`; fallback código=`localhost:9092` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_BOOTSTRAP_SERVERS` | `.env=localhost:9092`; `docker-compose.yml=kafka:9092`; fallback código=`localhost:9092` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_CONSUMER_GROUP` | No encontrado | No encontrado |
+| `KAFKA_GROUP_ID` | No encontrado | No encontrado |
+| `KAFKA_CLIENT_ID` | `.env=subscriptions-service`; `docker-compose.yml=subscriptions-service`; default código=`subscriptions-service` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_ENABLED` | `.env=true`; `docker-compose.yml=true`; default código=`true` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_SECURITY_PROTOCOL` | `.env=PLAINTEXT`; `docker-compose.yml=PLAINTEXT`; default código=`PLAINTEXT` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_SASL_MECHANISM` | `.env=`; `docker-compose.yml=` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_USERNAME` | `.env=`; `docker-compose.yml=` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_PASSWORD` | `.env=`; `docker-compose.yml=` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_CA_CERT` | `.env=`; `docker-compose.yml=` | `.env`, `docker-compose.yml`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_CA_CERT_PATH` | `docker-compose.yml=`; `.env.example` comentado | `docker-compose.yml`, `.env.example`, `subscriptions/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CREATED` | default código=`subscription.created`; `docker-compose.yml=subscription.created`; `.env.example` comentado | `subscriptions/infrastructure/configuration/config.go`, `docker-compose.yml`, `.env.example` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CANCELLED` | default código=`subscription.cancelled`; `docker-compose.yml=subscription.cancelled`; `.env.example` comentado | `subscriptions/infrastructure/configuration/config.go`, `docker-compose.yml`, `.env.example` |
+| `KAFKA_TOPIC_SUBSCRIPTION_PLAN_CHANGED` | default código=`subscription.plan.changed`; `docker-compose.yml=subscription.plan.changed`; `.env.example` comentado | `subscriptions/infrastructure/configuration/config.go`, `docker-compose.yml`, `.env.example` |
+| `KAFKA_TOPIC_SUBSCRIPTION_EXPIRED` | default código=`subscription.expired`; `docker-compose.yml=subscription.expired`; `.env.example` comentado | `subscriptions/infrastructure/configuration/config.go`, `docker-compose.yml`, `.env.example` |
+| `KAFKA_TOPIC_SUBSCRIPTION_UPDATED` | default código=`subscription.updated`; `docker-compose.yml=subscription.updated`; `.env.example` comentado | `subscriptions/infrastructure/configuration/config.go`, `docker-compose.yml`, `.env.example` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `subscriptions-service` |
+| Puerto | `18083` local con `.env`; `8080` dentro de contenedor; `8083` expuesto por Docker Compose al host |
+| Base URL local sugerida | `http://localhost:18083` |
+| Prefix | `/api/v1` |
+| Health | `/health` y `/api/v1/health` |
+| Rutas principales | `/api/v1/subscription-plans`, `/api/v1/subscriptions`, `/api/v1/webhooks/stripe` |
+| Topics publica | `subscription.created`, `subscription.cancelled`, `subscription.plan.changed`, `subscription.expired`, `subscription.updated` |
+| Topics consume | No encontrado |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente entre fuentes:
+  - `.env`: `SERVER_PORT=18083`
+  - `.env.example`: `PORT=8080` y `SERVER_PORT=8080`
+  - `Dockerfile`: `PORT=8080`
+  - `docker-compose.yml`: `PORT=8080`, `SERVER_PORT=8080`, host `APP_PORT` default `8083`
+  - Real por precedencia de código: local actual `18083`; en contenedor `8080`
+- Hay doble variable para brokers: `KAFKA_BROKERS` y `KAFKA_BOOTSTRAP_SERVERS`. Ambas se soportan; esto duplica configuración
+- `KAFKA_CLIENT_ID` se carga en config y se guarda en `Publisher`, pero el publisher no lo aplica al `kafka.Writer`; efectivamente queda sin uso real en la publicación
+- `KafkaBootstrapServer` existe en `AppConfig`, pero `main.go` pasa `cfg.KafkaBrokers` al publisher; el campo individual no se usa directamente fuera de la carga/fallback
+- No hay healthcheck del servicio `subscriptions-service` en `Dockerfile` ni en `docker-compose.yml`; solo existen endpoints HTTP de health en código
+- No existe variable `API_BASE_PATH`; el prefijo `/api/v1` está hardcodeado en `subscriptions/router.go`
+- Los topics `KAFKA_TOPIC_SUBSCRIPTION_*` no están definidos en `.env` actual; el runtime local depende de defaults de código o de override remoto por `CONFIG_SERVICE_URL`
+- No se encontraron consumers Kafka registrados
+- No se encontraron topics legacy usados
+- No se encontraron publishers definidos pero desconectados
+- No se encontraron endpoints definidos pero no registrados en el router
+- No se encontraron handlers HTTP creados pero no conectados
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+
+- `SERVICE_URL` recomendado: `http://localhost:18083`
+- `Path predicates` recomendados: `/api/v1/subscription-plans/**`, `/api/v1/subscriptions/**`, `/api/v1/webhooks/stripe`, `/health`, `/api/v1/health`
+- `Health path` recomendado: `/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+
+- Nombre del servicio: `subscriptions-service`
+- URL local: `http://localhost:18083`
+- Puerto: `18083`
+- Prefix: `/api/v1`
+- Health endpoint: `/health`
+- Topics que publica: `subscriptions.events`
+- Topics que consume: `No encontrado`

@@ -1,0 +1,121 @@
+# Inventario técnico - energy-monitoring-service
+
+## 1. Identificación
+- Servicio: `energy-monitoring-service` (también expuesto en FastAPI/health como `Microservice-Energy-Monitoring-Service`)
+- Lenguaje/framework: Python 3 + FastAPI + Uvicorn
+- Archivo principal: `main.py`
+- Archivos de rutas/controladores: `main.py`, `monitoring/interfaces/rest/controllers/health_controller.py`, `monitoring/interfaces/rest/controllers/energy_simulation_controller.py`, `monitoring/interfaces/rest/controllers/energy_reading_controller.py`, `monitoring/interfaces/rest/controllers/device_consumption_controller.py`, `monitoring/interfaces/rest/controllers/consumption_alert_controller.py`, `monitoring/interfaces/rest/controllers/energy_meter_controller.py`
+- Archivos de configuración: `monitoring/infrastructure/configuration/settings.py`, `monitoring/infrastructure/configuration/config_service_client.py`, `.env`, `.env.example`, `Dockerfile`, `docker-compose.yml`
+
+## 2. HTTP / Red
+- Puerto real: `8001` (fuente local actual: `.env` y `docker-compose.yml`)
+- Puerto por defecto: `8080` (`settings.py` y `Dockerfile`)
+- Variable de puerto: `PORT` / `APP_PORT` (en este repo local se usa realmente `APP_PORT=8001`; el código acepta ambas)
+- Host: `0.0.0.0`
+- Prefix/base path: `/api/v1`
+- Health endpoints: `GET /api/v1/health`
+- CORS: Habilitado. `allow_origins` desde `CORS_ALLOW_ORIGINS`; valor local actual `http://localhost:3000,http://localhost:5173`; `allow_credentials=True`; `allow_methods=["*"]`; `allow_headers=["*"]`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/api/v1/health` | `health_check` | `monitoring/interfaces/rest/controllers/health_controller.py` |
+| POST | `/api/v1/energy/simulation/readings` | `generate_simulated_reading` | `monitoring/interfaces/rest/controllers/energy_simulation_controller.py` |
+| GET | `/api/v1/energy/devices/{device_id}/consumption/current` | `get_current_consumption` | `monitoring/interfaces/rest/controllers/energy_simulation_controller.py` |
+| GET | `/api/v1/energy/devices/{device_id}/consumption/history` | `get_consumption_history` | `monitoring/interfaces/rest/controllers/energy_simulation_controller.py` |
+| GET | `/api/v1/energy/pricing/current` | `get_current_pricing` | `monitoring/interfaces/rest/controllers/energy_simulation_controller.py` |
+| POST | `/api/v1/energy-readings` | `create_energy_reading` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| GET | `/api/v1/energy-readings/user/{user_id}` | `get_readings_by_user` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| GET | `/api/v1/energy-readings/device/{device_id}` | `get_readings_by_device` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| GET | `/api/v1/energy-readings/range` | `get_readings_by_date_range` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| GET | `/api/v1/energy-readings/meter/{meter_id}/latest` | `get_latest_by_meter` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| GET | `/api/v1/energy-readings/{reading_id}` | `get_reading_by_id` | `monitoring/interfaces/rest/controllers/energy_reading_controller.py` |
+| POST | `/api/v1/device-consumptions` | `create_device_consumption` | `monitoring/interfaces/rest/controllers/device_consumption_controller.py` |
+| GET | `/api/v1/device-consumptions/user/{user_id}` | `get_consumptions_by_user` | `monitoring/interfaces/rest/controllers/device_consumption_controller.py` |
+| GET | `/api/v1/device-consumptions/user/{user_id}/top` | `get_top_consumers` | `monitoring/interfaces/rest/controllers/device_consumption_controller.py` |
+| GET | `/api/v1/device-consumptions/{consumption_id}` | `get_consumption_by_id` | `monitoring/interfaces/rest/controllers/device_consumption_controller.py` |
+| POST | `/api/v1/consumption-alerts` | `create_alert` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| GET | `/api/v1/consumption-alerts/user/{user_id}` | `get_alerts_by_user` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| GET | `/api/v1/consumption-alerts/user/{user_id}/unread` | `get_unread_alerts` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| PATCH | `/api/v1/consumption-alerts/{alert_id}/read` | `mark_alert_as_read` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| PATCH | `/api/v1/consumption-alerts/{alert_id}/resolve` | `resolve_alert` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| GET | `/api/v1/consumption-alerts/{alert_id}` | `get_alert_by_id` | `monitoring/interfaces/rest/controllers/consumption_alert_controller.py` |
+| POST | `/api/v1/energy-meters` | `register_meter` | `monitoring/interfaces/rest/controllers/energy_meter_controller.py` |
+| GET | `/api/v1/energy-meters/user/{user_id}` | `get_meters_by_user` | `monitoring/interfaces/rest/controllers/energy_meter_controller.py` |
+| PATCH | `/api/v1/energy-meters/{meter_id}/deactivate` | `deactivate_meter` | `monitoring/interfaces/rest/controllers/energy_meter_controller.py` |
+| GET | `/api/v1/energy-meters/{meter_id}` | `get_meter_by_id` | `monitoring/interfaces/rest/controllers/energy_meter_controller.py` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_READING_PROCESSED` / `KAFKA_TOPIC_MONITORING_READING_PROCESSED` | `monitoring.reading.processed` | Publica lectura procesada y almacenada | `monitoring/application/outboundservices/monitoring_event_publisher.py` | `publish_reading_processed` |
+| `KAFKA_TOPIC_ENERGY_CONSUMPTION_RECORDED` | `energy.consumption.recorded` | Publica evento de consumo energético calculado | `monitoring/application/outboundservices/monitoring_event_publisher.py` | `publish_energy_reading_created` |
+| `KAFKA_TOPIC_ENERGY_READING_CREATED` | `energy.reading.created` | Publica evento legacy de creación de lectura | `monitoring/application/outboundservices/monitoring_event_publisher.py` | `publish_energy_reading_created` |
+| `KAFKA_TOPIC_ALERT_CREATED` / `KAFKA_TOPIC_MONITORING_ALERT_CREATED` | `monitoring.alert.created` | Publica alerta creada | `monitoring/application/outboundservices/monitoring_event_publisher.py` | `publish_alert_created` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_DEVICE_REGISTERED` | `device.registered` | Alta/activación de dispositivo para iniciar simulación automática | `monitoring/application/eventhandlers/monitoring_event_handler.py` | `MonitoringEventHandler._handle_device_registered` |
+| `KAFKA_TOPIC_READING_INGEST` / `KAFKA_TOPIC_MONITORING_READING_INGEST` | `monitoring.reading.ingest` | Ingesta de telemetría cruda | `monitoring/application/eventhandlers/monitoring_event_handler.py` | `MonitoringEventHandler._handle_reading_ingest` |
+| `KAFKA_TOPIC_ANOMALY_DETECTED` / `KAFKA_TOPIC_ANALYTICS_ANOMALY_DETECTED` | `analytics.anomaly.detected` | Evento de anomalía detectada por Analytics | `monitoring/application/eventhandlers/monitoring_event_handler.py` | `MonitoringEventHandler._handle_anomaly_detected` |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `.env.example=localhost:29092`; `docker-compose.yml=kafka:9092`; alias soportado por `settings.py` | `.env.example`, `docker-compose.yml`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_BOOTSTRAP_SERVERS` | `.env=localhost:9092`; `.env.example=localhost:29092`; `settings.py default=localhost:9092`; `docker-compose.yml=kafka:9092` | `.env`, `.env.example`, `docker-compose.yml`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_CONSUMER_GROUP` | `No encontrado` | `No encontrado` |
+| `KAFKA_GROUP_ID` | `.env=energy-monitoring-group`; `.env.example=energy-monitoring-group`; `settings.py default=energy-monitoring-group` | `.env`, `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_CLIENT_ID` | `No encontrado` como variable. El inicializador usa client id calculado: `<service_name>-topic-init` | `monitoring/infrastructure/messaging/kafka/kafka_topic_initializer.py` |
+| `KAFKA_SECURITY_PROTOCOL` | `.env.example=`; `settings.py default=PLAINTEXT` | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_SASL_MECHANISM` | `.env.example=`; `settings.py default=None` | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_USERNAME` | `.env.example=`; alias legacy soportado | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_PASSWORD` | `.env.example=`; alias legacy soportado | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_SASL_USERNAME` | `.env.example=`; alias soportado | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+| `KAFKA_SASL_PASSWORD` | `.env.example=`; alias soportado | `.env.example`, `monitoring/infrastructure/configuration/settings.py` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+| Dato | Valor |
+|---|---|
+| Servicio | `energy-monitoring-service` |
+| Puerto | `8001` |
+| Base URL local sugerida | `http://localhost:8001/api/v1` |
+| Prefix | `/api/v1` |
+| Health | `/api/v1/health` |
+| Rutas principales | `/api/v1/health`, `/api/v1/energy/**`, `/api/v1/energy-readings/**`, `/api/v1/device-consumptions/**`, `/api/v1/consumption-alerts/**`, `/api/v1/energy-meters/**` |
+| Topics publica | `monitoring.reading.processed`, `energy.consumption.recorded`, `energy.reading.created`, `monitoring.alert.created` |
+| Topics consume | `device.registered`, `monitoring.reading.ingest`, `analytics.anomaly.detected` |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente: `settings.py` y `Dockerfile` usan default `8080`, pero `.env` y `docker-compose.yml` usan `8001`. El puerto real local actual parece `8001`.
+- Variable de puerto inconsistente: el código prioriza `PORT` sobre `APP_PORT`, pero el repo local usa `APP_PORT`; el `Dockerfile` usa `PORT`.
+- Bootstrap Kafka inconsistente: `.env` usa `localhost:9092`, `.env.example` usa `localhost:29092`, `docker-compose.yml` usa `kafka:9092`.
+- `.env` no define topics que sí usa el código: `KAFKA_TOPIC_DEVICE_REGISTERED`, `KAFKA_TOPIC_ENERGY_CONSUMPTION_RECORDED`, `KAFKA_TOPIC_ENERGY_READING_CREATED`. En local actual esos quedan resueltos por default de `settings.py` o por Config Service si existiera.
+- Hay topic legacy todavía publicado: `energy.reading.created`.
+- Hay aliases legacy de variables Kafka todavía soportados: `KAFKA_TOPIC_READING_INGEST`, `KAFKA_TOPIC_ANOMALY_DETECTED`, `KAFKA_TOPIC_ALERT_CREATED`, `KAFKA_TOPIC_READING_PROCESSED`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`.
+- `docker-compose.yml` crea topics hardcodeados que coinciden con defaults/.env.example, pero no con lo declarado completamente en `.env`.
+- El microservicio tiene endpoint real de health `GET /api/v1/health`, pero `Dockerfile` no define `HEALTHCHECK` y `docker-compose.yml` no define healthcheck para este servicio.
+- Los consumers sí están registrados y conectados, pero dos handlers están incompletos funcionalmente: `_handle_reading_ingest` y `_handle_anomaly_detected` solo loguean y tienen `TODO` para despachar lógica de aplicación.
+- No encontré endpoints definidos fuera del router ni handlers REST desconectados del registro principal.
+- No encontré publishers definidos pero totalmente sin uso.
+- No encontré topics duplicados efectivos; `settings.get_kafka_topics()` además deduplica internamente.
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+- SERVICE_URL recomendado: `http://localhost:8001`
+- Path predicates recomendados: `/api/v1/health`, `/api/v1/energy/**`, `/api/v1/energy-readings/**`, `/api/v1/device-consumptions/**`, `/api/v1/consumption-alerts/**`, `/api/v1/energy-meters/**`
+- Health path recomendado: `/api/v1/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+- Nombre del servicio: `energy-monitoring-service`
+- URL local: `http://localhost:8001`
+- Puerto: `8001`
+- Prefix: `/api/v1`
+- Health endpoint: `/api/v1/health`
+- Topics que publica: `energy.events`
+- Topics que consume: `device.events`
+
+No modifiqué archivos. Si quieres, en el siguiente paso puedo convertir este inventario en un bloque listo para pegar directamente en tu API Gateway o en tu Config Service.

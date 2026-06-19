@@ -1,0 +1,112 @@
+# Inventario técnico - IAM Service
+
+## 1. Identificación
+- Servicio: `iam-service`
+- Lenguaje/framework: `Java 21 + Spring Boot 3.3.4` (`spring-boot-starter-web`, `security`, `actuator`, `data-jpa`, `spring-kafka`)
+- Archivo principal: `src/main/java/com/sems/SemsIamApplication.java`
+- Archivos de rutas/controladores: `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java`, `UserController.java`, `RoleController.java`, `HealthController.java`
+- Archivos de configuración: `src/main/resources/application.properties`, `.env`, `.env.example`, `docker-compose.yml`, `Dockerfile`, `src/main/java/com/sems/iam/infrastructure/authorization/sfs/configuration/SecurityConfiguration.java`, `src/main/java/com/sems/iam/infrastructure/config/ConfigServiceEnvironmentPostProcessor.java`, `src/main/java/com/sems/iam/infrastructure/messaging/kafka/configuration/KafkaTopicsProperties.java`, `KafkaTopicConfiguration.java`
+
+## 2. HTTP / Red
+- Puerto real: `8082` local por `.env` + `server.port=${SERVER_PORT:${PORT:8080}}`; `8080` dentro de Docker Compose (`SERVER_PORT: 8080`, contenedor `:8080`, publish `${IAM_PORT:-8080}:8080`)
+- Puerto por defecto: `8080`
+- Variable de puerto: `SERVER_PORT` con fallback a `PORT`
+- Host: `No encontrado` para binding HTTP (`server.address` no definido). URL pública configurada: `service.public-base-url=${IAM_DEPLOY_URL:http://localhost:8082}`
+- Prefix/base path: `No hay prefix global configurable`. Rutas REST hardcodeadas con `/api/v1/...`
+- Health endpoints: `/health`, `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`
+- CORS: `Sí`. Orígenes: `http://localhost:3000,http://localhost:5173`; métodos: `GET, POST, PUT, PATCH, DELETE, OPTIONS`; headers: `Authorization, Content-Type, Accept, Origin`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| POST | `/api/v1/auth/register` | `AuthenticationController.register` | `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java` |
+| POST | `/api/v1/auth/login` | `AuthenticationController.login` | `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java` |
+| POST | `/api/v1/auth/google` | `AuthenticationController.google` | `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java` |
+| GET | `/api/v1/auth/google/callback` | `AuthenticationController.googleCallback` | `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java` |
+| GET | `/api/v1/auth/google/url` | `AuthenticationController.googleAuthUrl` | `src/main/java/com/sems/iam/interfaces/rest/AuthenticationController.java` |
+| GET | `/api/v1/users/me` | `UserController.me` | `src/main/java/com/sems/iam/interfaces/rest/UserController.java` |
+| GET | `/api/v1/users` | `UserController.all` | `src/main/java/com/sems/iam/interfaces/rest/UserController.java` |
+| POST | `/api/v1/users/{userId}/roles` | `RoleController.assignRole` | `src/main/java/com/sems/iam/interfaces/rest/RoleController.java` |
+| GET | `/health` | `HealthController.health` | `src/main/java/com/sems/iam/interfaces/rest/HealthController.java` |
+| GET | `/actuator/health` | `Spring Boot Actuator health endpoint` | `spring-boot-starter-actuator` + `src/main/resources/application.properties` |
+| GET | `/actuator/health/liveness` | `Spring Boot Actuator probe` | `spring-boot-starter-actuator` + `src/main/resources/application.properties` |
+| GET | `/actuator/health/readiness` | `Spring Boot Actuator probe` | `spring-boot-starter-actuator` + `src/main/resources/application.properties` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `TOPIC_IAM_USER_REGISTERED` | `iam.user.registered` | Registro de usuario | `src/main/java/com/sems/iam/infrastructure/messaging/kafka/outbound/KafkaIamEventPublisher.java` | `publishUserRegistered()` |
+| `TOPIC_IAM_USER_LOGGED_IN` | `iam.user.logged-in` | Login de usuario | `src/main/java/com/sems/iam/infrastructure/messaging/kafka/outbound/KafkaIamEventPublisher.java` | `publishUserLoggedIn()` |
+| `TOPIC_IAM_ROLE_ASSIGNED` | `iam.role.assigned` | Asignación de rol | `src/main/java/com/sems/iam/infrastructure/messaging/kafka/outbound/KafkaIamEventPublisher.java` | `publishRoleAssigned()` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| `TOPIC_IAM_ROLE_ASSIGNMENT_REQUESTED` | `iam.role-assignment.requested` | Solicitud de asignación de rol; crea `AssignRoleCommand` y llama `UserRoleCommandService.assignRole(...)` | `src/main/java/com/sems/iam/infrastructure/messaging/kafka/inbound/KafkaIamEventConsumer.java` | `onRoleAssignmentRequested()` |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `localhost:9092` | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | `.env`, `.env.example` |
+| `KAFKA_CONSUMER_GROUP_ID` | `iam-service` | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_GROUP_ID` | `No encontrado` | `No encontrado` |
+| `KAFKA_CLIENT_ID` | `No encontrado` | `No encontrado` |
+| `KAFKA_ENABLED` | `true` | `.env`, `application.properties`, `docker-compose.yml` |
+| `KAFKA_SECURITY_PROTOCOL` | `.env=PLAINTEXT`, default código=`PLAINTEXT` | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_SASL_MECHANISM` | vacío | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_USERNAME` | vacío | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_PASSWORD` | vacío | `.env`, `.env.example`, `application.properties` |
+| `KAFKA_SSL_CA_CERT` | vacío | `.env`, `application.properties`, `docker-compose.yml` |
+| `KAFKA_SASL_JAAS_CONFIG` | default inline en código Spring | `application.properties`, `ConfigServiceEnvironmentPostProcessor.java` |
+| `KAFKA_SSL_TRUSTSTORE_TYPE` | default `PEM` | `application.properties`, `ConfigServiceEnvironmentPostProcessor.java` |
+| `KAFKA_HOST` | `localhost` | `.env`, `docker-compose.yml` |
+| `KAFKA_PORT` | `9092` | `.env`, `docker-compose.yml` |
+| `KAFKA_BROKERS_DOCKER` | `.env.example=kafka:9092`, usado en Compose; `.env` actual usa `kafka:29092` | `.env`, `.env.example`, `docker-compose.yml` |
+| `KAFKA_BOOTSTRAP_SERVERS_DOCKER` | `.env.example=kafka:9092`, usado en Compose; `.env` actual usa `kafka:29092` | `.env`, `.env.example` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `iam-service` |
+| Puerto | `8082` local; `8080` en Docker |
+| Base URL local sugerida | `http://localhost:8082` |
+| Prefix | `No hay prefix global`; rutas reales bajo `/api/v1/auth` y `/api/v1/users` |
+| Health | `/health` |
+| Rutas principales | `/api/v1/auth/**`, `/api/v1/users/**` |
+| Topics publica | `iam.user.registered`, `iam.user.logged-in`, `iam.role.assigned` |
+| Topics consume | `iam.role-assignment.requested` |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente entre fuentes: `application.properties` default `8080`; `.env` usa `SERVER_PORT=8082`; `.env.example` define `PORT=8080` y `SERVER_PORT=8082`; `Dockerfile` expone `8080`; `docker-compose.yml` fuerza `SERVER_PORT=8080` y publica `${IAM_PORT:-8080}:8080`.
+- No existe `API_BASE_PATH` ni `server.servlet.context-path`; el prefix REST está hardcodeado en controladores (`/api/v1/auth`, `/api/v1/users`).
+- El micro expone health real en código (`/health`) y Actuator (`/actuator/health...`), pero `Dockerfile` y `docker-compose.yml` no definen `HEALTHCHECK`/`healthcheck`.
+- Variables Kafka duplicadas para bootstrap: `KAFKA_BROKERS` y `KAFKA_BOOTSTRAP_SERVERS` apuntan al mismo concepto; el código prioriza `KAFKA_BROKERS` y luego `KAFKA_BOOTSTRAP_SERVERS`.
+- Variantes Docker Kafka inconsistentes: `.env` usa `kafka:29092`, pero `.env.example` y `docker-compose.yml` usan `kafka:9092`.
+- Variables Kafka presentes pero no usadas por la app Spring para conexión: `KAFKA_HOST` y `KAFKA_PORT`.
+- Variables Kafka auxiliares solo para Compose/interpolación, no leídas directamente por Spring: `KAFKA_BROKERS_DOCKER`, `KAFKA_BOOTSTRAP_SERVERS_DOCKER`.
+- `.env` actual no define `TOPIC_IAM_*`; por lo tanto, localmente los topics reales caen en los defaults de `application.properties`.
+- No encontré topics hardcodeados distintos a los defaults configurados.
+- No encontré topics legacy todavía usados.
+- No encontré topics duplicados entre publish/consume.
+- No encontré consumers registrados sin handler.
+- No encontré publishers definidos sin uso.
+- No encontré endpoints definidos pero no registrados.
+- No encontré handlers creados pero no conectados.
+- El micro sí puede sobrescribir `server.port`, `spring.kafka.*`, `topics.*` y `service.public-base-url` desde `CONFIG_SERVICE_URL`, pero ese valor externo no es verificable desde este repo.
+
+## 9. Resumen para copiar al API Gateway
+- `SERVICE_URL recomendado`: `http://localhost:8082`
+- `Path predicates recomendados`: `/api/v1/auth/**, /api/v1/users/**`
+- `Health path recomendado`: `/health`
+
+## 10. Resumen para copiar al Config Service
+- `Nombre del servicio`: `iam-service`
+- `URL local`: `http://localhost:8082`
+- `Puerto`: `8082`
+- `Prefix`: `/api/v1`
+- `Health endpoint`: `/health`
+- `Topics que publica`: `iam.events`
+- `Topics que consume`: `No encontrado`

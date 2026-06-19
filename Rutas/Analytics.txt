@@ -1,0 +1,116 @@
+# Inventario técnico - Analytics Service
+
+## 1. Identificación
+- Servicio: `analytics-service` / `Analytics Service`
+- Lenguaje/framework: Python + FastAPI + Uvicorn
+- Archivo principal: `main.py`
+- Archivos de rutas/controladores: `main.py`, `analytics/interfaces/rest/controllers/health_controller.py`, `analytics/interfaces/rest/controllers/device_identification_controller.py`, `analytics/interfaces/rest/controllers/bill_prediction_controller.py`, `analytics/interfaces/rest/controllers/recommendation_controller.py`, `analytics/interfaces/rest/controllers/anomaly_controller.py`, `analytics/interfaces/rest/controllers/consumption_ranking_controller.py`
+- Archivos de configuración: `analytics/infrastructure/configuration/settings.py`, `analytics/infrastructure/configuration/config_service_client.py`, `.env`, `.env.example`, `Dockerfile`, `docker-compose.yml`, `application.properties: No encontrado`, `application.yaml: No encontrado`, `config.go: No encontrado`
+
+## 2. HTTP / Red
+- Puerto real: `8004` en ejecución local por `.env`; `8080` en Dockerfile y `docker-compose.yml`
+- Puerto por defecto: `8004` en código (`settings.py`), `${PORT:-8080}` en `Dockerfile`
+- Variable de puerto: `PORT`
+- Host: `0.0.0.0` en `main.py`
+- Prefix/base path: `/api/v1/analytics`
+- Health endpoints: `/api/v1/analytics/health`, `/api/v1/health`
+- CORS: Sí. `allowed_origins` desde `settings.py`; local `.env` = `["http://localhost:3000","http://localhost:5173"]`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/api/v1/analytics/health` | `health` | `analytics/interfaces/rest/controllers/health_controller.py` |
+| GET | `/api/v1/health` | `health` | `analytics/interfaces/rest/controllers/health_controller.py` |
+| GET | `/api/v1/analytics/device-identifications/user/{user_id}` | `get_device_identifications_by_user` | `analytics/interfaces/rest/controllers/device_identification_controller.py` |
+| POST | `/api/v1/analytics/device-identifications` | `create_device_identification` | `analytics/interfaces/rest/controllers/device_identification_controller.py` |
+| GET | `/api/v1/analytics/bill-predictions/user/{user_id}` | `get_bill_predictions_by_user` | `analytics/interfaces/rest/controllers/bill_prediction_controller.py` |
+| POST | `/api/v1/analytics/bill-predictions` | `create_bill_prediction` | `analytics/interfaces/rest/controllers/bill_prediction_controller.py` |
+| GET | `/api/v1/analytics/recommendations/user/{user_id}` | `get_recommendations_by_user` | `analytics/interfaces/rest/controllers/recommendation_controller.py` |
+| POST | `/api/v1/analytics/recommendations` | `create_recommendation` | `analytics/interfaces/rest/controllers/recommendation_controller.py` |
+| PATCH | `/api/v1/analytics/recommendations/{recommendation_id}/apply` | `apply_recommendation` | `analytics/interfaces/rest/controllers/recommendation_controller.py` |
+| GET | `/api/v1/analytics/anomalies/user/{user_id}` | `get_anomalies_by_user` | `analytics/interfaces/rest/controllers/anomaly_controller.py` |
+| POST | `/api/v1/analytics/anomalies` | `create_anomaly` | `analytics/interfaces/rest/controllers/anomaly_controller.py` |
+| PATCH | `/api/v1/analytics/anomalies/{anomaly_id}/resolve` | `resolve_anomaly` | `analytics/interfaces/rest/controllers/anomaly_controller.py` |
+| GET | `/api/v1/analytics/consumption-rankings/user/{user_id}` | `get_consumption_rankings_by_user` | `analytics/interfaces/rest/controllers/consumption_ranking_controller.py` |
+| POST | `/api/v1/analytics/consumption-rankings` | `create_consumption_ranking` | `analytics/interfaces/rest/controllers/consumption_ranking_controller.py` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_ANALYTICS_DEVICE_IDENTIFIED` | `analytics.device_identified` | Resultado de identificación de dispositivo | `analytics/application/commandservices/device_identification_command_service.py` | `create()` -> `publish_device_identified()` |
+| `KAFKA_TOPIC_ANALYTICS_BILL_PREDICTION_GENERATED` | `analytics.bill_prediction.generated` | Predicción de recibo generada | `analytics/application/commandservices/bill_prediction_command_service.py` | `create()` -> `publish_bill_prediction_generated()` |
+| `KAFKA_TOPIC_ANALYTICS_RECOMMENDATION_GENERATED` | `analytics.recommendation.generated` | Recomendación generada | `analytics/application/commandservices/recommendation_command_service.py` | `create()` -> `publish_recommendation_generated()` |
+| `KAFKA_TOPIC_ANALYTICS_ANOMALY_DETECTED` | `analytics.anomaly.detected` | Anomalía detectada | `analytics/application/commandservices/anomaly_command_service.py` | `create()` -> `publish_anomaly_detected()` |
+| `KAFKA_TOPIC_ANALYTICS_CONSUMPTION_RANKING_GENERATED` | `analytics.consumption_ranking.generated` | Ranking de consumo generado | `analytics/application/commandservices/consumption_ranking_command_service.py` | `create()` -> `publish_consumption_ranking_generated()` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_ENERGY_READING_CREATED` | `energy.reading.created` | Procesar lectura energética y disparar analítica | `analytics/application/eventhandlers/analytics_event_handler.py` | `KafkaConsumerAdapter` -> `AnalyticsEventHandler.handle()` -> `_handle_energy_reading_created()` |
+| `KAFKA_TOPIC_DEVICE_REGISTERED` | `device.registered` | Disparar identificación de dispositivo | `analytics/application/eventhandlers/analytics_event_handler.py` | `KafkaConsumerAdapter` -> `AnalyticsEventHandler.handle()` -> `_handle_device_event()` |
+| `KAFKA_TOPIC_DEVICE_STATUS_UPDATED` | `device.status.updated` | Disparar identificación de dispositivo | `analytics/application/eventhandlers/analytics_event_handler.py` | `KafkaConsumerAdapter` -> `AnalyticsEventHandler.handle()` -> `_handle_device_event()` |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | alias de `kafka_bootstrap_servers`; `.env.example=kafka:9092`, `docker-compose.yml=kafka:9092` | `settings.py`, `.env.example`, `docker-compose.yml` |
+| `KAFKA_BOOTSTRAP_SERVERS` | código default `localhost:9092`; `.env=localhost:9092`; `docker-compose.yml=kafka:9092` | `settings.py`, `.env`, `docker-compose.yml` |
+| `KAFKA_CONSUMER_GROUP` | código/default `analytics-service-group`; `.env=analytics-service-group`; `docker-compose.yml=analytics-service-group` | `settings.py`, `.env`, `docker-compose.yml` |
+| `KAFKA_GROUP_ID` | No encontrado | No encontrado |
+| `KAFKA_CLIENT_ID` | No encontrado | No encontrado |
+| `KAFKA_ENABLED` | código/default `True`; `.env=true`; `docker-compose.yml=true` | `settings.py`, `.env`, `docker-compose.yml` |
+| `KAFKA_SECURITY_PROTOCOL` | código/default `PLAINTEXT`; `.env.example=` vacío | `settings.py`, `.env.example` |
+| `KAFKA_SASL_MECHANISM` | código/default vacío; `.env.example=` vacío | `settings.py`, `.env.example` |
+| `KAFKA_USERNAME` | alias de usuario SASL; `.env.example=` vacío | `settings.py`, `.env.example` |
+| `KAFKA_PASSWORD` | alias de password SASL; `.env.example=` vacío | `settings.py`, `.env.example` |
+| `KAFKA_SASL_USERNAME` | alias soportado en código | `settings.py` |
+| `KAFKA_SASL_PASSWORD` | alias soportado en código | `settings.py` |
+| `KAFKA_CONSUMED_TOPICS` | soportado en código; si falta, usa 3 topics por defecto | `settings.py` |
+| `KAFKA_TOPIC_ENERGY_CONSUMPTION_RECORDED` | alias legacy para `energy.reading.created` | `settings.py` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `analytics-service` |
+| Puerto | `8004` local por `.env`; `8080` en Docker |
+| Base URL local sugerida | `http://localhost:8004` |
+| Prefix | `/api/v1/analytics` |
+| Health | `/api/v1/analytics/health` y `/api/v1/health` |
+| Rutas principales | `/api/v1/analytics/device-identifications`, `/api/v1/analytics/bill-predictions`, `/api/v1/analytics/recommendations`, `/api/v1/analytics/anomalies`, `/api/v1/analytics/consumption-rankings` |
+| Topics publica | `analytics.device_identified`, `analytics.bill_prediction.generated`, `analytics.recommendation.generated`, `analytics.anomaly.detected`, `analytics.consumption_ranking.generated` |
+| Topics consume | `energy.reading.created`, `device.registered`, `device.status.updated` |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente entre fuentes: `settings.py` default `8004`, `.env` `8004`, `Dockerfile` fallback `8080`, `docker-compose.yml` `8080`.
+- Health check inconsistente: código expone `/api/v1/analytics/health` y además `/api/v1/health`; `docker-compose.yml` valida solo `/api/v1/health`.
+- Prefix potencialmente variable: código default `/api/v1/analytics`, pero `settings.py` permite override remoto por `ConfigService` usando `apiPrefix` o `routePrefix`.
+- `health_controller` está registrado dos veces en `main.py`, generando dos health endpoints distintos.
+- `docker-compose.yml` crea el topic `energy.consumption.recorded`, pero el código normaliza ese valor legacy a `energy.reading.created` y no se suscribe directamente a `energy.consumption.recorded`.
+- Existe alias legacy `KAFKA_TOPIC_ENERGY_CONSUMPTION_RECORDED` en código, pero no aparece en `.env` ni `.env.example`.
+- `KAFKA_BROKERS` y `KAFKA_BOOTSTRAP_SERVERS` son aliases del mismo setting; en `docker-compose.yml` ambos están definidos con el mismo valor.
+- `KAFKA_CONSUMED_TOPICS` existe en código pero no está definido en `.env` ni `.env.example`; por eso el consumo real cae al default de 3 topics.
+- No encontré topics hardcodeados distintos a los defaults, salvo el topic legacy creado en `docker-compose.yml`.
+- No encontré consumers registrados sin handler.
+- No encontré publishers definidos pero no usados.
+- No encontré endpoints definidos pero no registrados en el router.
+- No encontré handlers creados pero no conectados.
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+- `SERVICE_URL` recomendado: `http://localhost:8004`
+- `Path predicates` recomendados: `/api/v1/analytics/**`
+- `Health path` recomendado: `/api/v1/analytics/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+- Nombre del servicio: `analytics-service`
+- URL local: `http://localhost:8004`
+- Puerto: `8004`
+- Prefix: `/api/v1/analytics`
+- Health endpoint: `/api/v1/analytics/health`
+- Topics que publica: `analytics.events`, `billing.events`
+- Topics que consume: `energy.events`
+
+No modifiqué archivos. Si quieres, en el siguiente paso puedo convertir este inventario en un bloque exacto de configuración para tu API Gateway o para tu Config Service, pero sin salir de los valores de este microservicio.

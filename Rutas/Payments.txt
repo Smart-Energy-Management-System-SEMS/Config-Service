@@ -1,0 +1,123 @@
+# Inventario técnico - Payments Service
+
+## 1. Identificación
+- Servicio: `payments-service` / Payments Service
+- Lenguaje/framework: Go, `gin-gonic/gin` para HTTP, `gorm` para persistencia, `segmentio/kafka-go` para Kafka
+- Archivo principal: [main.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/main.go)
+- Archivos de rutas/controladores: [payments/interfaces/rest/controllers/routes.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/interfaces/rest/controllers/routes.go), [payment_controller.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/interfaces/rest/controllers/payment_controller.go), [payment_method_controller.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/interfaces/rest/controllers/payment_method_controller.go), [invoice_controller.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/interfaces/rest/controllers/invoice_controller.go), [webhook_controller.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/interfaces/rest/controllers/webhook_controller.go)
+- Archivos de configuración: [payments/infrastructure/configuration/config.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/infrastructure/configuration/config.go), [payments/infrastructure/configuration/config_service_client.go](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/payments/infrastructure/configuration/config_service_client.go), [.env](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/.env), [.env.example](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/.env.example), [Dockerfile](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/Dockerfile), [docker-compose.yml](/c:/Users/ASUS/Desktop/UPC/UPC-Ciclo%20Vll/Fundamentos%20de%20Arquitectura%20de%20Software/Sems/Microservice-Payments-Service/docker-compose.yml)
+
+## 2. HTTP / Red
+- Puerto real: `8086` parece ser el real local por `.env` (`SERVER_PORT=8086`) y `docker-compose`; nota: `CONFIG_SERVICE_URL=http://localhost:8090` puede sobrescribir el puerto si ese servicio responde
+- Puerto por defecto: `8085` en código (`config.go`), con prioridad previa para `PORT` si existe
+- Variable de puerto: `PORT` primero; si no existe, `SERVER_PORT`
+- Host: No encontrado como variable; el servidor escucha en `":" + ServerPort` (`0.0.0.0`)
+- Prefix/base path: `API_BASE_PATH=/api/v1` por `.env`; default en código `/api/v1`; también puede ser sobrescrito por Config Service
+- Health endpoints: `GET /health`, `GET /api/v1/health`
+- CORS: Sí existe; `AllowOrigins` desde `CORS_ALLOWED_ORIGINS` o default `http://localhost:3000,http://localhost:5173`; `AllowCredentials` desde `CORS_ALLOW_CREDENTIALS` o default `false`; métodos `GET, POST, PUT, PATCH, DELETE, OPTIONS`
+
+## 3. Endpoints HTTP
+| Método | Ruta completa | Handler/controlador | Archivo |
+|---|---|---|---|
+| GET | `/health` | handler inline en `main.go` | `main.go` |
+| GET | `/api/v1/health` | handler inline en `main.go` | `main.go` |
+| POST | `/api/v1/payment-methods` | `PaymentMethodController.Register` | `payments/interfaces/rest/controllers/payment_method_controller.go` |
+| GET | `/api/v1/payment-methods/user/:userId` | `PaymentMethodController.FindByUser` | `payments/interfaces/rest/controllers/payment_method_controller.go` |
+| PUT | `/api/v1/payment-methods/:paymentMethodId/default` | `PaymentMethodController.SetDefault` | `payments/interfaces/rest/controllers/payment_method_controller.go` |
+| DELETE | `/api/v1/payment-methods/:paymentMethodId` | `PaymentMethodController.Delete` | `payments/interfaces/rest/controllers/payment_method_controller.go` |
+| POST | `/api/v1/payments/process` | `PaymentController.Process` | `payments/interfaces/rest/controllers/payment_controller.go` |
+| GET | `/api/v1/payments/:paymentId` | `PaymentController.FindByID` | `payments/interfaces/rest/controllers/payment_controller.go` |
+| GET | `/api/v1/payments/user/:userId` | `PaymentController.FindByUser` | `payments/interfaces/rest/controllers/payment_controller.go` |
+| GET | `/api/v1/payments/subscription/:subscriptionId` | `PaymentController.FindBySubscription` | `payments/interfaces/rest/controllers/payment_controller.go` |
+| GET | `/api/v1/invoices/:invoiceId` | `InvoiceController.FindByID` | `payments/interfaces/rest/controllers/invoice_controller.go` |
+| GET | `/api/v1/invoices/payment/:paymentId` | `InvoiceController.FindByPaymentID` | `payments/interfaces/rest/controllers/invoice_controller.go` |
+| POST | `/api/v1/webhooks/stripe` | `WebhookController.HandleStripe` | `payments/interfaces/rest/controllers/webhook_controller.go` |
+
+## 4. Kafka - Topics que PUBLICA
+| Variable | Topic real | Evento/uso | Archivo | Función/método |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_PAYMENT_PROCESSED` o legacy `KAFKA_PAYMENT_PROCESSED_TOPIC` | `payment.processed` | pago procesado exitosamente | `payments/infrastructure/messaging/kafka/producer.go` | `Producer.PublishPaymentProcessed` |
+| `KAFKA_TOPIC_PAYMENT_FAILED` o legacy `KAFKA_PAYMENT_FAILED_TOPIC` | `payment.failed` | pago fallido o cancelado | `payments/infrastructure/messaging/kafka/producer.go` | `Producer.PublishPaymentFailed` |
+| `KAFKA_TOPIC_INVOICE_GENERATED` o legacy `KAFKA_INVOICE_GENERATED_TOPIC` | `invoice.generated` | factura generada | `payments/infrastructure/messaging/kafka/producer.go` | `Producer.PublishInvoiceGenerated` |
+| `KAFKA_TOPIC_PAYMENT_METHOD_ADDED` o legacy `KAFKA_PAYMENT_METHOD_ADDED_TOPIC` | `payment.method.added` | medio de pago agregado | `payments/infrastructure/messaging/kafka/producer.go` | `Producer.PublishPaymentMethodAdded` |
+
+## 5. Kafka - Topics que CONSUME
+| Variable | Topic real | Evento/uso | Archivo | Consumer/handler |
+|---|---|---|---|---|
+| `KAFKA_TOPIC_SUBSCRIPTION_CREATED` o legacy `KAFKA_SUBSCRIPTION_CREATED_TOPIC` | `subscription.created` | recibe alta de suscripción; hoy solo hace log | `payments/infrastructure/messaging/kafka/consumer.go` | `SubscriptionEventsHandler.HandleSubscriptionCreated` |
+| `KAFKA_TOPIC_SUBSCRIPTION_RENEWAL_REQUESTED` o legacy `KAFKA_SUBSCRIPTION_RENEWAL_REQUESTED_TOPIC` | `subscription.renewal.requested` | procesa cobro de renovación | `payments/infrastructure/messaging/kafka/consumer.go` | `SubscriptionEventsHandler.HandleSubscriptionRenewalRequested` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CANCELLED` o legacy `KAFKA_SUBSCRIPTION_CANCELLED_TOPIC` | `subscription.cancelled` | recibe cancelación; hoy solo hace log | `payments/infrastructure/messaging/kafka/consumer.go` | `SubscriptionEventsHandler.HandleSubscriptionCancelled` |
+
+## 6. Kafka - Variables generales
+| Variable | Valor/default | Archivo |
+|---|---|---|
+| `KAFKA_BROKERS` | `.env=localhost:9092`, `docker-compose` para contenedor=`kafka:29092`, default código=`localhost:9092` | `.env`, `docker-compose.yml`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_BOOTSTRAP_SERVERS` | No encontrado | No encontrado |
+| `KAFKA_CLIENT_ID` | `.env=payments-service`, default código=`payments-service` | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_CONSUMER_GROUP` | No encontrado | No encontrado |
+| `KAFKA_GROUP_ID` | No encontrado | No encontrado |
+| `Consumer Group runtime` | derivado en código: `KAFKA_CLIENT_ID + "-group"` = `payments-service-group` | `payments/infrastructure/messaging/kafka/consumer.go` |
+| `KAFKA_ENSURE_TOPICS` | `.env=false`, `.env.example=false`, default código=`false` | `.env`, `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_PAYMENT_PROCESSED` | `.env.example=payment.processed`, default código=`payment.processed` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_PAYMENT_PROCESSED_TOPIC` | `.env=payment.processed` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_PAYMENT_FAILED` | `.env.example=payment.failed`, default código=`payment.failed` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_PAYMENT_FAILED_TOPIC` | `.env=payment.failed` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_INVOICE_GENERATED` | `.env.example=invoice.generated`, default código=`invoice.generated` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_INVOICE_GENERATED_TOPIC` | `.env=invoice.generated` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_PAYMENT_METHOD_ADDED` | `.env.example=payment.method.added`, default código=`payment.method.added` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_PAYMENT_METHOD_ADDED_TOPIC` | `.env=payment.method.added` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CREATED` | `.env.example=subscription.created`, default código=`subscription.created` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_SUBSCRIPTION_CREATED_TOPIC` | `.env=subscription.created` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_SUBSCRIPTION_RENEWAL_REQUESTED` | `.env.example=subscription.renewal.requested`, default código=`subscription.renewal.requested` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_SUBSCRIPTION_RENEWAL_REQUESTED_TOPIC` | `.env=subscription.renewal.requested` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_TOPIC_SUBSCRIPTION_CANCELLED` | `.env.example=subscription.cancelled`, default código=`subscription.cancelled` | `.env.example`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_SUBSCRIPTION_CANCELLED_TOPIC` | `.env=subscription.cancelled` legacy compatible | `.env`, `payments/infrastructure/configuration/config.go` |
+| `KAFKA_PAYMENT_REQUESTED_TOPIC` | `.env=payment.requested`, pero no usado por código | `.env` |
+
+## 7. Variables externas necesarias para API Gateway y Config Service
+Solo lista valores de este micro:
+
+| Dato | Valor |
+|---|---|
+| Servicio | `payments-service` |
+| Puerto | `8086` |
+| Base URL local sugerida | `http://localhost:8086` |
+| Prefix | `/api/v1` |
+| Health | `/api/v1/health` |
+| Rutas principales | `/api/v1/payment-methods`, `/api/v1/payments`, `/api/v1/invoices`, `/api/v1/webhooks/stripe` |
+| Topics publica | `payment.processed`, `payment.failed`, `invoice.generated`, `payment.method.added` |
+| Topics consume | `subscription.created`, `subscription.renewal.requested`, `subscription.cancelled` |
+
+## 8. Inconsistencias internas encontradas
+- Puerto inconsistente: código usa default `8085`, `.env` y `docker-compose` usan `8086`, `.env.example` además declara `PORT=8080`, y `Dockerfile` hace `EXPOSE 8080`.
+- Variables de puerto duplicadas: el código prioriza `PORT` sobre `SERVER_PORT`; `.env` solo define `SERVER_PORT`, `.env.example` define `PORT=8080` y `SERVER_PORT=8086`.
+- Health check inconsistente a nivel de despliegue: el código expone `/health` y `/api/v1/health`, pero `Dockerfile` y `docker-compose.yml` no definen `HEALTHCHECK`.
+- Prefix potencialmente sobrescribible: el código usa `API_BASE_PATH` local, pero `config_service_client.go` puede reemplazarlo desde `CONFIG_SERVICE_URL`; el valor local real puede variar si ese servicio responde.
+- Convención Kafka inconsistente: `.env` usa variables legacy `KAFKA_*_TOPIC`; `.env.example` usa variables oficiales `KAFKA_TOPIC_*`; el código soporta ambas.
+- Variable Kafka existente pero no usada: `KAFKA_PAYMENT_REQUESTED_TOPIC` está en `.env`, pero no aparece en el código.
+- Variables Kafka declaradas para ejemplo pero no leídas por este micro: `KAFKA_SECURITY_PROTOCOL`, `KAFKA_SASL_MECHANISM`, `KAFKA_USERNAME`, `KAFKA_PASSWORD`.
+- No encontré topics hardcodeados con nombres distintos al `.env`; los nombres usados por productor, consumidor y `docker-compose` coinciden.
+- No encontré topics duplicados activos; los 7 topics configurados son únicos.
+- No encontré consumers registrados sin handler.
+- No encontré publishers definidos pero totalmente sin uso.
+- No encontré endpoints definidos pero no registrados.
+- No encontré handlers HTTP creados pero no conectados.
+- Los handlers de `subscription.created` y `subscription.cancelled` sí están conectados, pero actualmente solo hacen log y no ejecutan lógica adicional.
+
+## 9. Resumen para copiar al API Gateway
+Dame solo:
+- SERVICE_URL recomendado: `http://localhost:8086`
+- Path predicates recomendados: `/api/v1/payment-methods/**`, `/api/v1/payments/**`, `/api/v1/invoices/**`, `/api/v1/webhooks/**`, `/api/v1/health`
+- Health path recomendado: `/api/v1/health`
+
+## 10. Resumen para copiar al Config Service
+Dame solo:
+- Nombre del servicio: `payments-service`
+- URL local: `http://localhost:8086`
+- Puerto: `8086`
+- Prefix: `/api/v1`
+- Health endpoint: `/api/v1/health`
+- Topics que publica: `payments.events`
+- Topics que consume: `billing.events`, `subscriptions.events`
+
+Si quieres, en el siguiente paso puedo convertir este inventario en un bloque listo para pegar en tu API Gateway o en tu Config Service, pero sin analizarlos todavía.
